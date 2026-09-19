@@ -1,18 +1,18 @@
 // 生产经营分析系统 - Service Worker
 // 修改此版本号即可强制所有客户端更新缓存
-const CACHE_VERSION = 'v1.30.256';
+const CACHE_VERSION = 'v1.30.257';
 const CACHE_NAME = 'production-analysis-' + CACHE_VERSION;
 
 const urlsToCache = [
-  '/',
-  '/index.html',
-  '/chart.umd.min.js',
-  '/jspdf.umd.min.js',
-  '/html2canvas.min.js',
-  '/manifest.json',
-  '/icon-192.png',
-  '/icon-512.png',
-  '/apple-touch-icon.png'
+  './',
+  './index.html',
+  './chart.umd.min.js',
+  './jspdf.umd.min.js',
+  './html2canvas.min.js',
+  './manifest.json',
+  './icon-192.png',
+  './icon-512.png',
+  './apple-touch-icon.png'
 ];
 
 self.addEventListener('install', (event) => {
