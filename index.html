@@ -2114,7 +2114,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.263</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.264</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -7276,26 +7276,37 @@
             }
         }
 
-        // 版本自检（v1.30.238）：应用常开时旧代码一直驻留内存，导致「已更新却看不到」。
-        // 标签页重新可见时若正在输入则不打扰；否则拉取线上 index.html 比对版本，一变即自动刷新。
+        // 版本自检（v1.30.238 起）：应用常开时旧代码驻留内存，导致「已更新却看不到」。
+        // v1.30.264 起：版本变化时不再静默刷新，而是在顶部弹出「更新提示」横幅，用户点「立即更新」再刷新；
+        // 每 60s 自检一次（不必切标签页），录入中不打扰。
         (function () {
-            let _checking = false;
-            document.addEventListener('visibilitychange', function () {
-                if (document.hidden || _checking) return;
-                const ae = document.activeElement;
+            var _checking = false, _bannerShown = false;
+            function showUpdateBanner() {
+                if (_bannerShown) return;
+                _bannerShown = true;
+                var b = document.createElement('div');
+                b.id = 'update-banner';
+                b.setAttribute('style', 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#2d5af5;color:#fff;font-size:14px;padding:10px 14px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.2)');
+                b.innerHTML = '发现新版本，<button id="update-now" style="background:#fff;color:#2d5af5;border:none;border-radius:6px;padding:4px 12px;font-weight:600;cursor:pointer;margin-left:8px">立即更新</button>';
+                document.body.appendChild(b);
+                document.getElementById('update-now').addEventListener('click', function () { location.reload(true); });
+            }
+            function check() {
+                if (_checking) return;
+                var ae = document.activeElement;
                 if (ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName || '')) return; // 用户正在录入，跳过
                 _checking = true;
                 fetch('index.html?ts=' + Date.now(), { cache: 'no-store' })
                     .then(function (r) { return r && r.ok ? r.text() : ''; })
                     .then(function (txt) {
-                        const m = txt && txt.match(/const APP_VERSION = '([^']+)'/);
-                        if (m && m[1] && m[1] !== APP_VERSION) {
-                            try { location.reload(true); } catch (e) { location.reload(); }
-                        }
+                        var m = txt && txt.match(/const APP_VERSION = '([^']+)'/);
+                        if (m && m[1] && m[1] !== APP_VERSION) { showUpdateBanner(); }
                     })
                     .catch(function () {})
                     .then(function () { _checking = false; });
-            });
+            }
+            document.addEventListener('visibilitychange', function () { if (!document.hidden) check(); });
+            setInterval(check, 60000);
         })();
 
         // ============ PWA ============
