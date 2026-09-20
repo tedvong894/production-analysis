@@ -2114,7 +2114,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.264</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.265</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -6819,7 +6819,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.264';
+        const APP_VERSION = 'v1.30.265';
 
         function forceRefresh() {
             if ('caches' in window) {
@@ -7277,7 +7277,7 @@
         }
 
         // 版本自检（v1.30.238 起）：应用常开时旧代码驻留内存，导致「已更新却看不到」。
-        // v1.30.264 起：版本变化时不再静默刷新，而是在顶部弹出「更新提示」横幅，用户点「立即更新」再刷新；
+        // v1.30.265 起：，而是在顶部弹出「更新提示」横幅，用户点「立即更新」再刷新；
         // 每 60s 自检一次（不必切标签页），录入中不打扰。
         (function () {
             var _checking = false, _bannerShown = false;
@@ -7311,7 +7311,7 @@
 
         // ============ PWA ============
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js?v=' + APP_VERSION).then(function (reg) {
+            navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(function (reg) {
                 if (reg && reg.installing) {
                     reg.installing.addEventListener('statechange', function () {
                         if (reg.installing.state === 'installed' && navigator.serviceWorker.controller) {
