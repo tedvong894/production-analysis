@@ -2,7 +2,7 @@
   "name": "生产经营分析系统",
   "short_name": "生产分析",
   "description": "岗位工资与编制管理",
-  "start_url": "/production-analysis/",
+  "start_url": "https://tedvong894.github.io/production-analysis/",
   "scope": "/production-analysis/",
   "display": "standalone",
   "background_color": "#f5f7fa",
