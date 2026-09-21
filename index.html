@@ -2116,7 +2116,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.270</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.271</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -4814,9 +4814,9 @@
             let pHtml = `<table class="cockpit-table"><thead><tr><th>指标</th><th class="center">数值</th></tr></thead><tbody>`;
             pHtml += `<tr><td>可入库总产量</td><td class="center">${fmtNum(whCur)}</td></tr>`;
             pHtml += `<tr><td>外贸可入库产量</td><td class="center">${fmtNum(foreignWhCur)}</td></tr>`;
-            pHtml += `<tr><td>可实现总收入</td><td class="center">${fmtMoney(profit.realizableRevenue)}</td></tr>`;
-            pHtml += `<tr><td>EBITDA</td><td class="center">${fmtMoney(rtCp.ebit)}</td></tr>`;
-            pHtml += `<tr><td>考核利润</td><td class="center">${fmtMoney(rtCp.assess)}</td></tr>`;
+            pHtml += `<tr><td>可实现总收入</td><td class="center">${fmtMoney(profit.realizableRevenue * rtCp.tf)}</td></tr>`; // 全月预估值
+            pHtml += `<tr><td>EBITDA</td><td class="center">${fmtMoney(rtCp.ebit * rtCp.tf)}</td></tr>`; // 全月预估值(实时×时间系数)
+            pHtml += `<tr><td>考核利润</td><td class="center">${fmtMoney(rtCp.assess * rtCp.tf)}</td></tr>`; // 全月预估值(实时×时间系数)
             pHtml += `<tr><td>盈亏平衡点产量</td><td class="center">${bep}</td></tr>`;
             pHtml += `</tbody></table>`;
             const cpb = document.getElementById('cockpit-profit-body');
@@ -5521,11 +5521,24 @@
                 if (empty || profitMonths.length === 0) {
                     pEl.innerHTML = '<div class="analysis-empty">本表未选择任何月份，请在「本表月份」中勾选需要统计的月份。</div>';
                 } else {
-                    const pStats = profitMonths.map(m => ({
-                        ...calcMonthProfit(m.name),
-                        warehouse: getMonthTotalWarehouse(m.name),
-                        labor: calcLaborCostRows(m.name)
-                    }));
+                    // 经营成果统一采用全月预估值：非历史月份=实时值×时间系数；历史月份tf=1无差。
+                    // 固定成本(人工+管理费)/资金成本保持满额(全月预估=实时×tf 已恢复满额，不再单独÷tf)。
+                    const pStats = profitMonths.map(m => {
+                        const rt = getRealTimeProfit(m.name);
+                        const full = calcMonthProfit(m.name);
+                        const tfM = rt.tf;
+                        return {
+                            ...full,
+                            warehouse: full.warehouseTotal * tfM,           // 全月产量
+                            realizableRevenue: full.realizableRevenue * tfM, // 全月收入
+                            ebit: rt.ebit * tfM,                            // 全月预估 EBITDA
+                            contributionMargin: full.contributionMargin * tfM, // 全月边际贡献
+                            fixedCost: full.fixedCost,                     // 满额固定成本(人工+管理费)
+                            fundCost: full.fundCost,                       // 满额资金成本
+                            assessProfit: rt.assess * tfM,                  // 全月预估 考核利润
+                            labor: calcLaborCostRows(m.name)
+                        };
+                    });
                     const toWan = v => Math.round(v / 10000 * 10) / 10; // 元→万元
                     // 盈亏平衡点产量＝可入库总产量×(DOL－1)/DOL＝可入库总产量×固定成本/边际贡献；边际贡献为 0 → —
                     const bepFmt = (wh, cm, fc) => {
@@ -6835,7 +6848,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.270';
+        const APP_VERSION = 'v1.30.271';
 
         function forceRefresh() {
             if ('caches' in window) {
