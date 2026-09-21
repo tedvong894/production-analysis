@@ -2116,7 +2116,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.268</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.269</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -5720,7 +5720,6 @@
 
         function renderProfit() {
             const monthName = monthlyData.currentMonth;
-            const profitFull = calcMonthProfit(monthName);          // 全月预估基准（满人工）
             const profit = calcMonthProfit(monthName, true);        // 实时口径（人工÷时间系数）→ 卡片 + 产品明细表
 
             // 月份选择器
@@ -5742,11 +5741,11 @@
             setProfitNumber('profit-stat-net', rt.net);
             setProfitNumber('profit-stat-assess', rt.assess);
 
-            // 全月预估：EBITDA（产量）按时间系数放大到全月；资金成本/折旧摊销仍按已发生部分（÷tf）。
+            // 全月预估 = 实时值 × 时间系数（与「外贸产量质量」预估口径一致：当前值 × 时间系数，同步放大）。
             // 历史月份 tf=1，预估与实时一致、不受影响。
-            const ebitEst = profitFull.ebit * rt.tf;   // 全月预估基于满人工 EBITDA 推算
-            const netEst = ebitEst - (rt.depreciation + rt.fundCost) / rt.tf;
-            const assessEst = ebitEst - rt.fundCost / rt.tf;
+            const ebitEst = rt.ebit * rt.tf;
+            const assessEst = rt.assess * rt.tf;
+            const netEst = rt.net * rt.tf;
             const fmtEst = v => '¥' + fmtNum(v);
             document.getElementById('profit-stat-ebit-est').textContent = fmtEst(ebitEst);
             document.getElementById('profit-stat-net-est').textContent = fmtEst(netEst);
@@ -6836,7 +6835,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.268';
+        const APP_VERSION = 'v1.30.269';
 
         function forceRefresh() {
             if ('caches' in window) {
