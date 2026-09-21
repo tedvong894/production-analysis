@@ -1843,6 +1843,8 @@
         </div>
 
         <div class="cockpit-dashboard" data-page-node-id="7l4seXEtYVkbCjnT7bMjc7">
+            <!-- 驾驶舱：顶部本阶段综合分析（可折叠 / 纯文本表格，格式同简要分析），置于产量质量汇总之前 -->
+            <div id="cockpit-stage-analysis"></div>
             <!-- 产量质量：月度累计汇总（含国内板/砌块），占满第一排 -->
             <div class="cockpit-section" style="--accent:#3a7d5a;" data-page-node-id="ShFM9bMEWefshaPi5D3JgU">
                 <div class="cockpit-section-head" data-page-node-id="sUD1XZEeWEQAZ58zKML6Dj">
@@ -1885,8 +1887,6 @@
 
         <!-- 驾驶舱：底部简要分析 -->
         <div id="cockpit-brief-analysis"></div>
-        <!-- 驾驶舱：底部本阶段综合分析（可折叠 / 纯文本表格，格式同简要分析） -->
-        <div id="cockpit-stage-analysis"></div>
     </div>
 
     <!-- 批量编辑弹窗 -->
@@ -2116,7 +2116,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.267</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.268</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -4564,13 +4564,16 @@
             };
         }
 
-        function calcMonthProfit(name) {
+        function calcMonthProfit(name, realTimeLabor) {
             const record = getProfitMonthRecord(name);
             const monthData = record.data;
             const P = getMonthParams(name);
             const warehouseTotal = calcWarehouseTotal((row, col) => monthData[row]?.[col] || 0);
             const laborTotal = calcMonthLaborTotal(record);
-            const laborUnitPrice = warehouseTotal > 0 ? laborTotal / warehouseTotal : 0;
+            // 实时人工口径：realTimeLabor=true 时，单位人工成本按时间系数折算（实时人工成本 = 总人工成本 / 时间系数）；
+            // 历史月份时间系数=1，折算后与全月值一致、不受影响。总人工成本(laborTotal)始终保持全月值不变。
+            const tfLabor = realTimeLabor ? getTimeFactor(name) : 1;
+            const laborUnitPrice = warehouseTotal > 0 ? (laborTotal / warehouseTotal) / tfLabor : 0;
             // 总人数 / 总人工单价 / 部门平均工资：直接调用总人力成本表合计行的「人数」「部门单价」「部门平均工资」
             const lcRows = calcLaborCostRows(name);
             const headcountTotal = lcRows.totalCount;
@@ -4644,7 +4647,7 @@
         // 历史月份 tf=1 → 实时值 = 实际值，不受影响。
         // 驾驶舱如需「净利润实时值」，直接调用本函数取 .net 即可。
         function getRealTimeProfit(monthName) {
-            const profit = calcMonthProfit(monthName);
+            const profit = calcMonthProfit(monthName, true);  // 实时人工成本：总人工成本 ÷ 时间系数
             const tf = getTimeFactor(monthName);
             const P = getMonthParams(monthName);
             const depreciation = P.profitDepreciation || 0;
@@ -4804,16 +4807,15 @@
             if (cpEl) cpEl.textContent = (profitName || '').replace(/^\d+年/, '');
             const whCur = getMonthTotalWarehouse(profitName);
             const foreignWhCur = getMonthYieldStats(profitName).warehouse;
+            // 驾驶舱利润引用实时口径（人工÷时间系数），与经营利润卡片共用同一口径
+            const rtCp = getRealTimeProfit(profitName);
             // 盈亏平衡点产量＝可入库总产量×固定成本/边际贡献；边际贡献为 0 → —
             const bep = profit.contributionMargin ? fmtNum(whCur * profit.fixedCost / profit.contributionMargin) : '—';
             let pHtml = `<table class="cockpit-table"><thead><tr><th>指标</th><th class="center">数值</th></tr></thead><tbody>`;
             pHtml += `<tr><td>可入库总产量</td><td class="center">${fmtNum(whCur)}</td></tr>`;
             pHtml += `<tr><td>外贸可入库产量</td><td class="center">${fmtNum(foreignWhCur)}</td></tr>`;
             pHtml += `<tr><td>可实现总收入</td><td class="center">${fmtMoney(profit.realizableRevenue)}</td></tr>`;
-            pHtml += `<tr><td>EBITDA</td><td class="center">${fmtMoney(profit.ebit)}</td></tr>`;
-            // 考核利润＝实时值（EBITDA 实时；资金成本只扣已发生部分 ÷tf），与经营利润卡片共用同一口径。
-            // 后续驾驶舱若需净利润实时值，直接取 rtCp.net。历史月份 tf=1，=实际考核利润。
-            const rtCp = getRealTimeProfit(profitName);
+            pHtml += `<tr><td>EBITDA</td><td class="center">${fmtMoney(rtCp.ebit)}</td></tr>`;
             pHtml += `<tr><td>考核利润</td><td class="center">${fmtMoney(rtCp.assess)}</td></tr>`;
             pHtml += `<tr><td>盈亏平衡点产量</td><td class="center">${bep}</td></tr>`;
             pHtml += `</tbody></table>`;
@@ -5718,7 +5720,8 @@
 
         function renderProfit() {
             const monthName = monthlyData.currentMonth;
-            const profit = calcMonthProfit(monthName);
+            const profitFull = calcMonthProfit(monthName);          // 全月预估基准（满人工）
+            const profit = calcMonthProfit(monthName, true);        // 实时口径（人工÷时间系数）→ 卡片 + 产品明细表
 
             // 月份选择器
             const allMonthNames = [monthlyData.currentMonth, ...monthlyData.months.filter(m => m.name !== monthlyData.currentMonth).map(m => m.name)];
@@ -5741,7 +5744,7 @@
 
             // 全月预估：EBITDA（产量）按时间系数放大到全月；资金成本/折旧摊销仍按已发生部分（÷tf）。
             // 历史月份 tf=1，预估与实时一致、不受影响。
-            const ebitEst = rt.ebit * rt.tf;
+            const ebitEst = profitFull.ebit * rt.tf;   // 全月预估基于满人工 EBITDA 推算
             const netEst = ebitEst - (rt.depreciation + rt.fundCost) / rt.tf;
             const assessEst = ebitEst - rt.fundCost / rt.tf;
             const fmtEst = v => '¥' + fmtNum(v);
@@ -6833,7 +6836,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.267';
+        const APP_VERSION = 'v1.30.268';
 
         function forceRefresh() {
             if ('caches' in window) {
