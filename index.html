@@ -2116,7 +2116,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.269</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.270</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -4595,7 +4595,7 @@
                 const pack = P[`${p.vcPrefix}Pack`] || 0;
                 const freight = P[`${p.vcPrefix}Freight`] || 0;
                 const commission = P[`${p.vcPrefix}Commission`] || 0;
-                const manage = warehouseTotal > 0 ? (P.profitManage || 0) / warehouseTotal : 0;
+                const manage = warehouseTotal > 0 ? (P.profitManage || 0) / warehouseTotal / tfLabor : 0; // 管理费用同人工：全月管理费用÷全月产量(当前产量×时间系数)，实时口径下折算
                 const labor = laborUnitPrice;
                 const costTotal = material + labor + loss + aux + util + pack + freight + commission + manage;
 
@@ -6835,7 +6835,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.269';
+        const APP_VERSION = 'v1.30.270';
 
         function forceRefresh() {
             if ('caches' in window) {
