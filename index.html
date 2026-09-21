@@ -1885,6 +1885,8 @@
 
         <!-- 驾驶舱：底部简要分析 -->
         <div id="cockpit-brief-analysis"></div>
+        <!-- 驾驶舱：底部本阶段综合分析（可折叠 / 纯文本表格，格式同简要分析） -->
+        <div id="cockpit-stage-analysis"></div>
     </div>
 
     <!-- 批量编辑弹窗 -->
@@ -2114,7 +2116,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.266</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.267</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -4819,6 +4821,8 @@
             if (cpb) cpb.innerHTML = pHtml;
             // 驾驶舱底部「简要分析」块（仅首次挂载，避免覆盖正在编辑的状态）
             mountBriefAnalysis('cockpit-brief-analysis', BA_COCKPIT_KEY);
+            // 驾驶舱底部「本阶段综合分析」块（仅首次挂载，避免覆盖正在编辑的状态）
+            mountBriefAnalysis('cockpit-stage-analysis', BA_STAGE_KEY);
         }
 
         // ============ 经营分析（高层汇报） ============
@@ -5612,6 +5616,16 @@
 
         // ============ 简要分析（可折叠 / 可编辑） ============
         const BA_COCKPIT_KEY = 'brief_analysis_cockpit';
+        const BA_STAGE_KEY = 'brief_analysis_stage';
+        // 各简要分析块的中文标题与删除确认语（本阶段综合分析与简要分析复用同一套折叠/编辑逻辑）
+        const BA_META = {
+            'brief_analysis_cockpit':   { title: '简要分析',       confirm: '确定删除该简要分析？此操作不可撤销。' },
+            'brief_analysis_yield':     { title: '简要分析',       confirm: '确定删除该简要分析？此操作不可撤销。' },
+            'brief_analysis_deduction': { title: '简要分析',       confirm: '确定删除该简要分析？此操作不可撤销。' },
+            'brief_analysis_profit':    { title: '简要分析',       confirm: '确定删除该简要分析？此操作不可撤销。' },
+            'brief_analysis_stage':     { title: '本阶段综合分析', confirm: '确定删除该本阶段综合分析？此操作不可撤销。' }
+        };
+        function baMeta(key) { return BA_META[key] || { title: '简要分析', confirm: '确定删除该简要分析？此操作不可撤销。' }; }
         const BA_ANALYSIS_KEYS = {
             yield: 'brief_analysis_yield',
             deduction: 'brief_analysis_deduction',
@@ -5640,7 +5654,7 @@
             return '<div class="brief-analysis' + cls + '" data-ba-key="' + key + '">'
                 + '<div class="ba-head" onclick="toggleBriefAnalysis(\'' + key + '\')">'
                 + '<span class="ba-arrow">' + (has ? '▾' : '▸') + '</span>'
-                + '<span class="ba-title">简要分析</span>'
+                + '<span class="ba-title">' + baMeta(key).title + '</span>'
                 + '<span class="ba-spacer"></span>'
                 + (has
                     ? '<button class="ba-btn" onclick="event.stopPropagation(); editBriefAnalysis(\'' + key + '\')">编辑</button>'
@@ -5697,7 +5711,7 @@
         }
         function deleteBriefAnalysis(key) {
             // 删除该简要分析：清空 localStorage 并重置为「暂无分析」折叠态
-            if (!confirm('确定删除该简要分析？此操作不可撤销。')) return;
+            if (!confirm(baMeta(key).confirm)) return;
             saveBriefAnalysisText(key, '');
             rerenderBriefBlock(key);
         }
@@ -6819,7 +6833,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.266';
+        const APP_VERSION = 'v1.30.267';
 
         function forceRefresh() {
             if ('caches' in window) {
@@ -6867,6 +6881,8 @@
             });
             const ba = el.querySelector('#cockpit-brief-analysis');
             if (ba) out.push({ key: 'brief', name: '简要分析', node: ba });
+            const sa = el.querySelector('#cockpit-stage-analysis');
+            if (sa) out.push({ key: 'stage', name: '本阶段综合分析', node: sa });
             return out;
         }
 
@@ -7011,7 +7027,8 @@
                 const topSection = el.querySelector('.cockpit-section:not(.cockpit-row .cockpit-section)');
                 const row = el.querySelector('.cockpit-row');
                 const ba = el.querySelector('#cockpit-brief-analysis');
-                return [el.querySelector('.cockpit-header'), topSection, row, ba].filter(Boolean);
+                const sa = el.querySelector('#cockpit-stage-analysis');
+                return [el.querySelector('.cockpit-header'), topSection, row, ba, sa].filter(Boolean);
             }
             if (id === 'analysis') {
                 // 把经营分析拆到「表」级别，按 DOM 顺序收集：标题/子标题+表格/图表
@@ -7170,6 +7187,8 @@
                                 });
                                 const ba = el.querySelector('#cockpit-brief-analysis');
                                 if (ba && picked.has('brief')) blocks.push(ba);
+                                const sa = el.querySelector('#cockpit-stage-analysis');
+                                if (sa && picked.has('stage')) blocks.push(sa);
                             }
                         } else if (p.id === 'analysis') {
                             blocks = [];
