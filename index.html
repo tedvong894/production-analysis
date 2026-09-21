@@ -2116,7 +2116,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.271</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.272</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -5148,7 +5148,12 @@
                 ? '暂无月份数据，请先在相关模块录入月度数据。'
                 : '当前未勾选任何月份，请在「分析月份」中勾选需要统计的月份。';
             // 统一显示「年+月」长格式（2026年9月），杜绝跨年混淆
-            const labelOfMonth = m => toLongMonthKey(m.name) || m.name;
+            // v1.30.272：非历史月份（时间系数>1，即进行中的最新月）在月份旁标注「预估」，提示该月为全月预估口径
+            const labelOfMonth = m => {
+                const base = toLongMonthKey(m.name) || m.name;
+                const tf = getTimeFactor(m.name);
+                return tf > 1 ? base + '(预估)' : base;
+            };
             const labels = months.map(labelOfMonth);
             const safeLabel = i => labels[i] || (months[i] ? months[i].name : '—');
             // v1.30.242 修复：经营成果表的「本表月份」直接基于「全部月份」，不再叠加模块级「分析月份」的筛选。
@@ -5221,11 +5226,17 @@
                 if (empty) {
                     yEl.innerHTML = '<div class="analysis-empty">' + emptyTip + '</div>';
                 } else {
+                    // v1.30.272：非历史月份，可入库总产量/外贸可入库产量（绝对值）按时间系数放大为全月预估；
+                    // 外贸产量占比=外贸/总，分子分母同×tf 故比值不变（比率不缩放）。
                     const rows = months.map(m => {
                         const y = getMonthYieldStats(m.name);
                         const total = getMonthTotalWarehouse(m.name);
-                        const ratio = total > 0 ? y.warehouse / total * 100 : 0;
-                        return { ...y, total, ratio };
+                        const tf = getTimeFactor(m.name);
+                        const totalE = tf > 1 ? total * tf : total;
+                        const whE = tf > 1 ? y.warehouse * tf : y.warehouse;
+                        // 占比=外贸/总，分子分母同×tf 故比值不变；必须用缩放后的 whE/totalE（不能用 raw y.warehouse）
+                        const ratio = totalE > 0 ? whE / totalE * 100 : 0;
+                        return { ...y, total: totalE, warehouse: whE, ratio };
                     });
                     const n = rows.length;
                     const avg = (arr, key) => n ? Math.round(arr.reduce((a, s) => a + s[key], 0) / n * 10) / 10 : 0;
@@ -5270,8 +5281,14 @@
                         '75板': { wh: [], ratio: [], qual: [], rep: [], def: [] }
                     };
                     months.forEach((m, i) => {
-                        const s50 = getForeignYieldSpecStats(m.name, '50板');
-                        const s75 = getForeignYieldSpecStats(m.name, '75板');
+                        // v1.30.272：非历史月份，外贸明细的产量/修补/不良（绝对值）同×tf → 可入库产量放大为全月预估，
+                        // 合格率/修补率/不良率=同比例缩放，比值不变（比率不缩放）。
+                        const tf = getTimeFactor(m.name);
+                        const scale = tf > 1 ? tf : 1;
+                        const s50r = getForeignYieldSpecStats(m.name, '50板');
+                        const s75r = getForeignYieldSpecStats(m.name, '75板');
+                        const s50 = { 产量: s50r.产量 * scale, 修补: s50r.修补 * scale, 不良: s50r.不良 * scale };
+                        const s75 = { 产量: s75r.产量 * scale, 修补: s75r.修补 * scale, 不良: s75r.不良 * scale };
                         const totalYield = s50.产量 + s75.产量;
                         [
                             { spec: '50板', s: s50 },
@@ -5317,10 +5334,13 @@
                     const foreignLabels = months.map((m, i) => safeLabel(i));
                     const wh50 = [], wh75 = [], q50 = [], q75 = [];
                     months.forEach(m => {
+                        const tf = getTimeFactor(m.name);
+                        const scale = tf > 1 ? tf : 1;
                         const a = getForeignYieldSpecStats(m.name, '50板');
                         const b = getForeignYieldSpecStats(m.name, '75板');
-                        wh50.push(Math.max(0, a.产量 - a.不良));
-                        wh75.push(Math.max(0, b.产量 - b.不良));
+                        // v1.30.272：非历史月份柱状图产量（绝对值）同×tf 放大为全月预估；合格率折线（比率）不缩放
+                        wh50.push(Math.max(0, a.产量 - a.不良) * scale);
+                        wh75.push(Math.max(0, b.产量 - b.不良) * scale);
                         q50.push(a.产量 > 0 ? (a.产量 - a.不良 - a.修补) / a.产量 * 100 : 0);
                         q75.push(b.产量 > 0 ? (b.产量 - b.不良 - b.修补) / b.产量 * 100 : 0);
                     });
@@ -5399,7 +5419,16 @@
                 if (empty) {
                     dEl.innerHTML = '<div class="analysis-empty">暂无月份数据。</div>';
                 } else {
-                    const dStats = months.map(m => getMonthDepts(m.name));
+                    // v1.30.272：非历史月份，扣款绝对值与扣款合计（绝对值）同×tf 放大为全月预估；
+                    // 扣款占比=某工段/合计，分子分母同×tf 故比值不变（比率不缩放）。
+                    const dStats = months.map(m => {
+                        const d = getMonthDepts(m.name);
+                        const tf = getTimeFactor(m.name);
+                        if (tf > 1) {
+                            return { rows: d.rows.map(r => ({ name: r.name, v: r.v * tf, ratio: r.ratio })), total: d.total * tf };
+                        }
+                        return d;
+                    });
                     const dn = dStats.length;
                     // v1.30.194：以「该工段自身的跨月均值」为基准，给扣款两张表按偏差上色。
                     // 偏差 = 该月该工段 − 该工段跨月均值；负=低于均值(改善)，正=高于均值(恶化)，扣款越低越好。
@@ -6848,7 +6877,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.271';
+        const APP_VERSION = 'v1.30.272';
 
         function forceRefresh() {
             if ('caches' in window) {
