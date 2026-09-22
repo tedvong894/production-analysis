@@ -1502,11 +1502,28 @@
             </div>
         </div>
 
-        <!-- 工段质量扣款·每日明细（v1.30.276）：列=各工段，行=扣款绝对值(录入)+扣款占比(自动)；月度累计自动进月度数据 -->
+        <!-- 工段质量扣款·每日明细（v1.30.276/277）：录入逻辑同产量每日明细——+录入(起始日+粘贴，每行=1天5列) / 批量添加弹窗(整表替换) / 添加日期 -->
         <div class="card" style="margin-top:14px;">
-            <div class="card-header card-header-light" style="display:flex; justify-content:space-between; align-items:center;">
-                <span style="font-size:13px; color:#333;">工段质量扣款（每日明细 · <span id="deduction-month-label"></span>）</span>
-                <button class="btn btn-save" style="font-size:12px; padding:4px 12px;" onclick="addDeductionDay()">+ 添加日期</button>
+            <div class="card-header compact card-header-light">
+                <button class="btn btn-save" style="font-size:13px; padding:5px 14px;" onclick="addDeductionBatch()">+ 录入</button>
+            </div>
+            <div class="yield-batch-body" style="padding:0 12px 10px;">
+                <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:5px;">
+                    <div>
+                        <label style="display:block; font-size:11px; color:#666; margin-bottom:2px;">起始日(号)</label>
+                        <input type="number" id="batch-dd-start-date" value="1" min="1" style="width:56px; padding:4px 5px; border:1px solid #ddd; border-radius:6px; font-size:12px; text-align:right;">
+                    </div>
+                    <div style="flex:1; min-width:110px;">
+                        <label style="display:block; font-size:11px; color:#666; margin-bottom:2px;">列顺序（每行 = 1 天，只录 1 条）</label>
+                        <input type="text" value="网片,釜前,下线,设备,工艺" disabled style="width:100%; padding:4px 5px; border:1px solid #eee; border-radius:6px; font-size:12px; color:#999; background:#fafafa;">
+                    </div>
+                </div>
+                <textarea id="batch-dd-text" placeholder="10	20	0	5	4
+8	12	0	6	2" style="width:100%; min-height:42px; padding:6px; border:1px solid #ddd; border-radius:6px; font-size:12px; box-sizing:border-box; resize:vertical;"></textarea>
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px 0;">
+                <span style="font-size:13px; color:#333;">每日明细（<span id="deduction-month-label"></span>）</span>
+                <button class="btn btn-save" style="font-size:12px; padding:4px 12px;" onclick="openBatchModal('dd')">批量添加</button>
             </div>
             <div id="deduction-daily-body" style="padding:10px 12px;"></div>
         </div>
@@ -2154,7 +2171,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.276</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.277</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -3499,6 +3516,36 @@
             if (document.getElementById('page-wage')?.classList.contains('active')) {
                 renderWagePrediction();
             }
+        }
+        // 批量录入（逻辑同产量 addYieldBatch）：每行 = 1 天（每天只 1 条），5 列 = 网片/釜前/下线/设备/工艺，日期自起始日顺延
+        function addDeductionBatch() {
+            if (!confirmYieldHistorical('录入')) return;
+            const text = (document.getElementById('batch-dd-text').value || '').trim();
+            if (!text) { showToast('请粘贴数据'); return; }
+            const startDate = parseInt(document.getElementById('batch-dd-start-date')?.value) || 1;
+            const rows = text.split(/\r?\n/).map(line => line.split('\t').map(v => v.trim()));
+            const m = getDeductionMonthObj();
+            let added = 0;
+            rows.forEach((cols, idx) => {
+                if (cols.length < 5) return;
+                const date = String(startDate + idx); // 每行 1 天，无规格轮换
+                const values = {};
+                DEPT_NAMES.forEach((n, i2) => { values[n] = Math.max(0, Math.round((parseFloat(cols[i2]) || 0) * 10) / 10); });
+                m.deductions.push({ id: genId(), date, values });
+                added++;
+            });
+            if (added === 0) { showToast('没有识别到有效数据，请检查格式（每行5列，TAB分隔）'); return; }
+            document.getElementById('batch-dd-text').value = '';
+            saveDeductions();
+            showToast(`成功添加 ${added} 天扣款记录`);
+        }
+        // 批量添加弹窗回填：现有每日明细逐行导出（日期 + 5 工段值）
+        function getDdBatchText() {
+            const m = getDeductionMonthObj();
+            return [...m.deductions]
+                .sort((a, b) => (parseInt(a.date, 10) || 0) - (parseInt(b.date, 10) || 0))
+                .map(r => [r.date, ...DEPT_NAMES.map(n => (r.values && r.values[n]) || 0)].join('\t'))
+                .join('\n');
         }
 
         function getYieldSpecSummary(monthName, spec) {
@@ -5861,7 +5908,6 @@
 
         function renderMonthAnalysis() {
             const cEl = document.getElementById('manalysis-yield-chart');
-            const tEl = document.getElementById('manalysis-phase-table');
             const tagEl = document.getElementById('manalysis-month-tag');
             const { monthName, recs, allRecs } = getManalysisRecords();
             const shortLabel = monthName ? (parseMonthName(monthName).month + '月') : '—';
@@ -5934,47 +5980,80 @@
                 }
             }
 
-            // ===== 指标2：阶段比较（行=上旬/中旬/下旬，仅显示已有数据的阶段） =====
-            // 说明：① 每日明细仅含外贸规格（50板/75板）；② 黄色修正数据条（同日第3条起）计入本表（v1.30.274）；
-            //       ③ 表格只保留 外贸可入库产量/合格率/修补率/不良率（可入库总产量、外贸产量占比不适用，已删）；
-            //       ④ 无数据的阶段（如下旬未到/未录）整行不出现，录入后自动出现。
-            if (tEl) {
-                if (allRecs.length === 0) {
-                    tEl.innerHTML = '<div class="analysis-empty">' + emptyTip + '</div>';
-                } else {
-                    const phaseRecs = [[], [], []];
-                    allRecs.forEach(r => phaseRecs[manalysisPhaseOf(r.date)].push(r));
-                    const rows = [];
-                    phaseRecs.forEach((prs, i) => {
-                        if (prs.length === 0) return; // 该阶段尚无数据 → 不出现
-                        const s = manalysisSum(prs, null);
-                        const warehouse = safeGood(s.产量, s.不良); // 与经营分析 getMonthYieldStats 同口径（合并后 safeGood）
-                        // 外贸分拣量 = 外贸可入库产量 / (1-不良率)；不良率≥100% 时分母≤0 → 显示 —
-                        const dRate = s.产量 > 0 ? s.不良 / s.产量 : 0;
-                        rows.push({
-                            label: shortLabel + MANALYSIS_PHASE_NAMES[i],
-                            sortQty: (1 - dRate) > 0 ? warehouse / (1 - dRate) : null,
-                            warehouse,
-                            qual: s.产量 > 0 ? (s.产量 - s.不良 - s.修补) / s.产量 * 100 : 0,
-                            repairRate: s.产量 > 0 ? s.修补 / s.产量 * 100 : 0,
-                            defectRate: s.产量 > 0 ? s.不良 / s.产量 * 100 : 0
-                        });
-                    });
-                    let h = '<div class="table-scroll"><table class="analysis-table center"><thead><tr><th>阶段</th><th>外贸分拣量(方)</th><th>外贸可入库产量(方)</th><th>合格率(%)</th><th>修补率(%)</th><th>不良率(%)</th></tr></thead><tbody>';
-                    rows.forEach(r0 => {
-                        h += `<tr><td>${r0.label}</td><td>${r0.sortQty === null ? '—' : fmtNum(r0.sortQty)}</td><td>${fmtNum(r0.warehouse)}</td><td>${fmtPct(r0.qual)}</td><td>${fmtPct(r0.repairRate)}</td><td>${fmtPct(r0.defectRate)}</td></tr>`;
-                    });
-                    // 合计行：全月已录部分（含修正数据条）
-                    const tSum = manalysisSum(allRecs, null);
-                    const tWh = safeGood(tSum.产量, tSum.不良);
-                    const tDRate = tSum.产量 > 0 ? tSum.不良 / tSum.产量 : 0;
-                    const tSort = (1 - tDRate) > 0 ? tWh / (1 - tDRate) : null;
-                    h += `<tr class="analysis-total"><td>合计(已录)</td><td>${tSort === null ? '—' : fmtNum(tSort)}</td><td>${fmtNum(tWh)}</td><td>${fmtPct(tSum.产量 > 0 ? (tSum.产量 - tSum.不良 - tSum.修补) / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.修补 / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.不良 / tSum.产量 * 100 : 0)}</td></tr>`;
-                    h += '</tbody></table></div>';
-                    tEl.innerHTML = h;
-                }
-            }
+            // ===== 指标2：阶段比较（v1.30.277 起独立函数，含 总产量(手输)/外贸占比(自动) 列） =====
+            renderPhaseComparison();
             // 指标3 团队表现：预留占位（HTML 静态提示），待「月度数据」支持按旬扣款录入后开放
+        }
+
+        // ===== 指标2：阶段比较（行=上旬/中旬/下旬，仅显示已有数据的阶段） =====
+        // 说明：① 每日明细仅含外贸规格（50板/75板）；② 黄色修正数据条（同日第3条起）计入本表（v1.30.274）；
+        //       ③ 无数据的阶段（如下旬未到/未录）整行不出现，录入后自动出现；
+        //       ④ v1.30.277：总产量(方)=手动输入（存 yieldData.months[yk].phaseTotals），外贸占比=外贸可入库/总产量 自动算。
+        function renderPhaseComparison() {
+            const tEl = document.getElementById('manalysis-phase-table');
+            if (!tEl) return;
+            const { monthName, allRecs } = getManalysisRecords();
+            const shortLabel = monthName ? (parseMonthName(monthName).month + '月') : '—';
+            const emptyTip = monthName
+                ? '「' + monthName + '」暂无每日明细数据，请先到「外贸产量质量」模块录入。'
+                : '暂无月份数据。';
+            if (allRecs.length === 0) {
+                tEl.innerHTML = '<div class="analysis-empty">' + emptyTip + '</div>';
+                return;
+            }
+            const yk = findYieldMonthKey(monthName);
+            const pt = (yk && yieldData.months[yk] && yieldData.months[yk].phaseTotals) || {};
+            const phaseRecs = [[], [], []];
+            allRecs.forEach(r => phaseRecs[manalysisPhaseOf(r.date)].push(r));
+            const rows = [];
+            phaseRecs.forEach((prs, i) => {
+                if (prs.length === 0) return; // 该阶段尚无数据 → 不出现
+                const s = manalysisSum(prs, null);
+                const warehouse = safeGood(s.产量, s.不良); // 与经营分析 getMonthYieldStats 同口径（合并后 safeGood）
+                // 外贸分拣量 = 外贸可入库产量 / (1-不良率)；不良率≥100% 时分母≤0 → 显示 —
+                const dRate = s.产量 > 0 ? s.不良 / s.产量 : 0;
+                const total = parseFloat(pt[String(i)]) || 0;
+                rows.push({
+                    i,
+                    label: shortLabel + MANALYSIS_PHASE_NAMES[i],
+                    sortQty: (1 - dRate) > 0 ? warehouse / (1 - dRate) : null,
+                    warehouse,
+                    total,
+                    ratio: total > 0 ? warehouse / total * 100 : null,
+                    qual: s.产量 > 0 ? (s.产量 - s.不良 - s.修补) / s.产量 * 100 : 0,
+                    repairRate: s.产量 > 0 ? s.修补 / s.产量 * 100 : 0,
+                    defectRate: s.产量 > 0 ? s.不良 / s.产量 * 100 : 0
+                });
+            });
+            let h = '<div class="table-scroll"><table class="analysis-table center"><thead><tr><th>阶段</th><th>外贸分拣量(方)</th><th>外贸可入库产量(方)</th><th>总产量(方)</th><th>外贸占比(%)</th><th>合格率(%)</th><th>修补率(%)</th><th>不良率(%)</th></tr></thead><tbody>';
+            rows.forEach(r0 => {
+                h += `<tr><td>${r0.label}</td><td>${r0.sortQty === null ? '—' : fmtNum(r0.sortQty)}</td><td>${fmtNum(r0.warehouse)}</td>`
+                    + `<td class="right"><input type="number" class="deduction-input" min="0" style="width:90px; text-align:right;" id="phase-total-${r0.i}" data-wh="${r0.warehouse}" value="${fmtNum(r0.total)}" onchange="onPhaseTotalEdit(${r0.i})"></td>`
+                    + `<td class="right" id="phase-ratio-${r0.i}">${r0.ratio === null ? '—' : fmtPct(r0.ratio)}</td>`
+                    + `<td>${fmtPct(r0.qual)}</td><td>${fmtPct(r0.repairRate)}</td><td>${fmtPct(r0.defectRate)}</td></tr>`;
+            });
+            // 合计行：全月已录部分（含修正数据条；总产量=三阶段手输之和）
+            const tSum = manalysisSum(allRecs, null);
+            const tWh = safeGood(tSum.产量, tSum.不良);
+            const tDRate = tSum.产量 > 0 ? tSum.不良 / tSum.产量 : 0;
+            const tSort = (1 - tDRate) > 0 ? tWh / (1 - tDRate) : null;
+            const tTotal = ['0', '1', '2'].reduce((s2, k) => s2 + (parseFloat(pt[k]) || 0), 0);
+            h += `<tr class="analysis-total"><td>合计(已录)</td><td>${tSort === null ? '—' : fmtNum(tSort)}</td><td>${fmtNum(tWh)}</td><td id="phase-total-sum">${fmtNum(tTotal)}</td><td id="phase-ratio-sum">${tTotal > 0 ? fmtPct(tWh / tTotal * 100) : '—'}</td><td>${fmtPct(tSum.产量 > 0 ? (tSum.产量 - tSum.不良 - tSum.修补) / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.修补 / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.不良 / tSum.产量 * 100 : 0)}</td></tr>`;
+            h += '</tbody></table></div>';
+            tEl.innerHTML = h;
+        }
+        // 总产量手输：存 yieldData.months[yk].phaseTotals{'0','1','2'}，随 YIELD_KEY 持久化/联网同步；占比与合计即时重算
+        function onPhaseTotalEdit(i) {
+            const monthName = getLatestMonth();
+            const yk = findYieldMonthKey(monthName);
+            const el = document.getElementById('phase-total-' + i);
+            if (!yk || !yieldData.months[yk] || !el) return;
+            const v = Math.max(0, parseFloat(el.value) || 0);
+            el.value = fmtNum(v);
+            if (!yieldData.months[yk].phaseTotals) yieldData.months[yk].phaseTotals = {};
+            yieldData.months[yk].phaseTotals[String(i)] = v;
+            saveYield();
+            renderPhaseComparison(); // 重算外贸占比与合计行
         }
 
         // ============ 简要分析（可折叠 / 可编辑） ============
@@ -6939,6 +7018,12 @@
                 const dRec = monthlyData.months.find(m => m.name === monthlyData.currentMonth);
                 const dInput = document.getElementById('batch-deduction-date');
                 if (dInput) dInput.value = (dRec && dRec.deductionDate) ? dRec.deductionDate : todayDateStr();
+            } else if (mode === 'dd') {
+                title.textContent = '批量编辑：工段质量扣款（每日明细）';
+                hint.innerHTML = '格式：每行 6 列，对应 日期[TAB]网片[TAB]釜前[TAB]下线[TAB]设备[TAB]工艺；也可只粘 5 列（网片/釜前/下线/设备/工艺），日期按行序自动顺延。<br><b style="color:#3a7d5a;">应用后整表替换本月的扣款每日明细。</b>';
+                textarea.value = getDdBatchText();
+                yieldConfig.style.display = 'none';
+                deductionConfig.style.display = 'none';
             } else if (mode === 'yield') {
                 title.textContent = '批量编辑：产量质量记录';
                 hint.innerHTML = '格式：每行 6 列，对应 日期[TAB]规格[TAB]产量[TAB]合格[TAB]修补[TAB]不良<br>也可只粘 4 列（产量/合格/修补/不良），系统按「规格顺序」循环分配日期与规格。';
@@ -7086,6 +7171,33 @@
                 }
                 renderYieldQuality();
                 showToast('产量质量数据已应用');
+            } else if (batchModalMode === 'dd') {
+                if (!confirmYieldHistorical('批量编辑工段质量扣款')) { closeBatchModal(); return; }
+                const newRecs = [];
+                let autoDay = 1;
+                rows.forEach(cols => {
+                    const clean = cols.map(v => v.trim()).filter(v => v !== '');
+                    if (clean.length < 5) return;
+                    let date, vals;
+                    if (clean.length >= 6) {
+                        // 6列格式：日期 + 5个工段值（用户手动指定日期）
+                        date = parseInt(clean[0], 10) || 0;
+                        vals = clean.slice(1, 6);
+                    } else {
+                        // 5列兼容格式：日期按行序自动顺延（跳过已用日期）
+                        while (newRecs.some(r2 => r2.date === String(autoDay))) autoDay++;
+                        date = autoDay;
+                        vals = clean.slice(0, 5);
+                    }
+                    date = Math.min(31, Math.max(1, date));
+                    const values = {};
+                    DEPT_NAMES.forEach((n, i2) => { values[n] = Math.max(0, Math.round((parseFloat(String(vals[i2]).replace(/,/g, '')) || 0) * 10) / 10); });
+                    newRecs.push({ id: genId(), date: String(date), values });
+                });
+                if (newRecs.length === 0) { showToast('没有识别到有效数据，请检查格式'); return; }
+                getDeductionMonthObj().deductions = newRecs;
+                saveDeductions();
+                showToast('工段质量扣款每日明细已应用');
             }
 
             closeBatchModal();
@@ -7196,7 +7308,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.276';
+        const APP_VERSION = 'v1.30.277';
 
         function forceRefresh() {
             if ('caches' in window) {
