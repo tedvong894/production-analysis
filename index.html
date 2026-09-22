@@ -2145,7 +2145,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.273</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.274</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -5696,7 +5696,8 @@
 
         // ============ 月度分析（未完成月份的月度内数据分析） ============
         // v1.30.273：定位「未完成月份/非历史月份」的月度内分析，分析月份自动取 app 最新月份（下月自动变 10月…）。
-        // 数据源 = 「外贸产量质量」模块每日明细；与该页同规则：同一天第 3 条起的记录为修正数据（黄色行），聚合时忽略。
+        // 数据源 = 「外贸产量质量」模块每日明细；与该页同规则：同一天第 3 条起的记录为修正数据（黄色行）。
+        // v1.30.274 修正数据口径：黄色修正条**计入指标2阶段比较**（各阶段加总算进去），**不计入指标1图表**（不单独加数据点）。
         // 指标3 团队表现（扣款占比/扣款绝对值）：工段质量扣款目前仅整月汇总，待支持按旬录入后开放（页面已预留）。
 
         // 阶段口径：上旬=1-10日，中旬=11-20日，下旬=21-月底；返回 0/1/2
@@ -5708,20 +5709,21 @@
         }
         const MANALYSIS_PHASE_NAMES = ['上旬', '中旬', '下旬'];
 
-        // 分析月份（app 最新月份）的每日明细：仅 50板/75板，剔除同日第 3 条起的修正数据
+        // 分析月份（app 最新月份）的每日明细：仅 50板/75板。
+        // recs = 剔除黄色修正行后的明细（供指标1图表）；allRecs = 全部明细含修正行（供指标2阶段比较）。
         function getManalysisRecords() {
             const monthName = getLatestMonth();
-            if (!monthName) return { monthName: '', recs: [] };
+            if (!monthName) return { monthName: '', recs: [], allRecs: [] };
             const yk = findYieldMonthKey(monthName);
-            const all = ((yk && yieldData.months[yk] && yieldData.months[yk].records) || [])
+            const allRecs = ((yk && yieldData.months[yk] && yieldData.months[yk].records) || [])
                 .filter(r => r.spec === '50板' || r.spec === '75板')
                 .sort((a, b) => (parseInt(a.date, 10) || 0) - (parseInt(b.date, 10) || 0));
             const daySeq = {};
-            const recs = all.filter(r => {
+            const recs = allRecs.filter(r => {
                 const seq = (daySeq[r.date] = (daySeq[r.date] || 0) + 1);
-                return seq <= 2; // 第 3 条起=修正数据（黄色行），忽略
+                return seq <= 2; // 第 3 条起=修正数据（黄色行）：图表忽略、阶段比较计入
             });
-            return { monthName, recs };
+            return { monthName, recs, allRecs };
         }
 
         // 记录集汇总：返回 {产量, 修补, 不良}；spec 传 '50板'/'75板' 时仅该规格，否则合并
@@ -5740,7 +5742,7 @@
             const cEl = document.getElementById('manalysis-yield-chart');
             const tEl = document.getElementById('manalysis-phase-table');
             const tagEl = document.getElementById('manalysis-month-tag');
-            const { monthName, recs } = getManalysisRecords();
+            const { monthName, recs, allRecs } = getManalysisRecords();
             const shortLabel = monthName ? (parseMonthName(monthName).month + '月') : '—';
             if (tagEl) tagEl.textContent = monthName || '暂无月份';
             const emptyTip = monthName
@@ -5811,32 +5813,37 @@
                 }
             }
 
-            // ===== 指标2：阶段比较（表格结构同经营分析·产量质量表，行=上旬/中旬/下旬） =====
-            // 说明：每日明细仅含外贸规格（50板/75板），故「可入库总产量」=「外贸可入库产量」、外贸产量占比=100%。
+            // ===== 指标2：阶段比较（行=上旬/中旬/下旬，仅显示已有数据的阶段） =====
+            // 说明：① 每日明细仅含外贸规格（50板/75板）；② 黄色修正数据条（同日第3条起）计入本表（v1.30.274）；
+            //       ③ 表格只保留 外贸可入库产量/合格率/修补率/不良率（可入库总产量、外贸产量占比不适用，已删）；
+            //       ④ 无数据的阶段（如下旬未到/未录）整行不出现，录入后自动出现。
             if (tEl) {
-                if (recs.length === 0) {
+                if (allRecs.length === 0) {
                     tEl.innerHTML = '<div class="analysis-empty">' + emptyTip + '</div>';
                 } else {
                     const phaseRecs = [[], [], []];
-                    recs.forEach(r => phaseRecs[manalysisPhaseOf(r.date)].push(r));
-                    const rows = phaseRecs.map(prs => {
+                    allRecs.forEach(r => phaseRecs[manalysisPhaseOf(r.date)].push(r));
+                    const rows = [];
+                    phaseRecs.forEach((prs, i) => {
+                        if (prs.length === 0) return; // 该阶段尚无数据 → 不出现
                         const s = manalysisSum(prs, null);
                         const warehouse = safeGood(s.产量, s.不良); // 与经营分析 getMonthYieldStats 同口径（合并后 safeGood）
-                        return {
+                        rows.push({
+                            label: shortLabel + MANALYSIS_PHASE_NAMES[i],
                             warehouse,
                             qual: s.产量 > 0 ? (s.产量 - s.不良 - s.修补) / s.产量 * 100 : 0,
                             repairRate: s.产量 > 0 ? s.修补 / s.产量 * 100 : 0,
                             defectRate: s.产量 > 0 ? s.不良 / s.产量 * 100 : 0
-                        };
+                        });
                     });
-                    let h = '<div class="table-scroll"><table class="analysis-table center"><thead><tr><th>阶段</th><th>可入库总产量(方)</th><th>外贸可入库产量(方)</th><th>外贸产量占比(%)</th><th>合格率(%)</th><th>修补率(%)</th><th>不良率(%)</th></tr></thead><tbody>';
-                    rows.forEach((r0, i) => {
-                        h += `<tr><td>${shortLabel}${MANALYSIS_PHASE_NAMES[i]}</td><td>${fmtNum(r0.warehouse)}</td><td>${fmtNum(r0.warehouse)}</td><td>${fmtPct(r0.warehouse > 0 ? 100 : 0)}</td><td>${fmtPct(r0.qual)}</td><td>${fmtPct(r0.repairRate)}</td><td>${fmtPct(r0.defectRate)}</td></tr>`;
+                    let h = '<div class="table-scroll"><table class="analysis-table center"><thead><tr><th>阶段</th><th>外贸可入库产量(方)</th><th>合格率(%)</th><th>修补率(%)</th><th>不良率(%)</th></tr></thead><tbody>';
+                    rows.forEach(r0 => {
+                        h += `<tr><td>${r0.label}</td><td>${fmtNum(r0.warehouse)}</td><td>${fmtPct(r0.qual)}</td><td>${fmtPct(r0.repairRate)}</td><td>${fmtPct(r0.defectRate)}</td></tr>`;
                     });
-                    // 合计行：全月已录部分（时间未到/未录的下旬自然偏小，属预期）
-                    const tSum = manalysisSum(recs, null);
+                    // 合计行：全月已录部分（含修正数据条）
+                    const tSum = manalysisSum(allRecs, null);
                     const tWh = safeGood(tSum.产量, tSum.不良);
-                    h += `<tr class="analysis-total"><td>合计(已录)</td><td>${fmtNum(tWh)}</td><td>${fmtNum(tWh)}</td><td>${fmtPct(tWh > 0 ? 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? (tSum.产量 - tSum.不良 - tSum.修补) / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.修补 / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.不良 / tSum.产量 * 100 : 0)}</td></tr>`;
+                    h += `<tr class="analysis-total"><td>合计(已录)</td><td>${fmtNum(tWh)}</td><td>${fmtPct(tSum.产量 > 0 ? (tSum.产量 - tSum.不良 - tSum.修补) / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.修补 / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.不良 / tSum.产量 * 100 : 0)}</td></tr>`;
                     h += '</tbody></table></div>';
                     tEl.innerHTML = h;
                 }
@@ -7063,7 +7070,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.273';
+        const APP_VERSION = 'v1.30.274';
 
         function forceRefresh() {
             if ('caches' in window) {
