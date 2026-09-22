@@ -2114,9 +2114,38 @@
         </div>
     </div>
 
+    <!-- 月度分析页：未完成月份（非历史月份）的月度内数据分析，分析月份自动取 app 最新月份 -->
+    <div class="page" id="page-manalysis">
+        <div class="analysis-header-bar">
+            <div class="analysis-header-title">月度分析</div>
+            <div class="analysis-month-filter">
+                <label>分析月份</label>
+                <span id="manalysis-month-tag" style="font-size:14px;color:#333;font-weight:600;">—</span>
+            </div>
+        </div>
+
+        <!-- 指标1：外贸产量质量（每日明细组合图，忽略黄色修正数据条） -->
+        <div class="analysis-card">
+            <div class="analysis-card-title"><span class="idx">1</span>外贸产量质量</div>
+            <div id="manalysis-yield-chart"></div>
+        </div>
+
+        <!-- 指标2：阶段比较（上旬=1-10日 / 中旬=11-20日 / 下旬=21-月底） -->
+        <div class="analysis-card">
+            <div class="analysis-card-title"><span class="idx">2</span>阶段比较</div>
+            <div id="manalysis-phase-table"></div>
+        </div>
+
+        <!-- 指标3：团队表现（预留：工段质量扣款目前按整月汇总，待支持按旬录入后开放） -->
+        <div class="analysis-card">
+            <div class="analysis-card-title"><span class="idx">3</span>团队表现</div>
+            <div id="manalysis-team-table"><div class="analysis-empty">工段质量扣款目前按整月汇总，暂无按旬（上旬/中旬/下旬）数据，待支持后开放。</div></div>
+        </div>
+    </div>
+
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.272</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.273</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -2129,6 +2158,10 @@
         <div class="tab-item" data-tab="analysis" onclick="switchTab('analysis')" data-page-node-id="AnZ9xK2LpQ7rYb3mWc8dEf">
             <span class="tab-icon" data-page-node-id="Bq1cD4eF6gH8iJ0kLm2nO3">📊</span>
             经营分析
+        </div>
+        <div class="tab-item" data-tab="manalysis" onclick="switchTab('manalysis')">
+            <span class="tab-icon">🗓️</span>
+            月度分析
         </div>
         <div class="tab-item" data-tab="profit" onclick="switchTab('profit')" data-page-node-id="z568L0IXCOFQ4B0nlyMS7E">
             <span class="tab-icon" data-page-node-id="PEnS77ADRqYc4O1LjEMsFD">📈</span>
@@ -2563,7 +2596,7 @@
             const tabBtn = document.querySelector('.tab-item[data-tab="' + tab + '"]');
             if (tabBtn) tabBtn.classList.add('active');
             const subEl = document.getElementById('page-subtitle');
-            if (subEl) subEl.textContent = ({ cockpit: '经营驾驶舱', profit: '经营利润', wage: '人工成本', order: '订单履约', yield: '外贸产量质量', monthly: '月度数据', params: '基础设置', analysis: '经营分析' })[tab] || '经营驾驶舱';
+            if (subEl) subEl.textContent = ({ cockpit: '经营驾驶舱', profit: '经营利润', wage: '人工成本', order: '订单履约', yield: '外贸产量质量', monthly: '月度数据', params: '基础设置', analysis: '经营分析', manalysis: '月度分析' })[tab] || '经营驾驶舱';
 
             if (tab === 'params') {
                 document.getElementById('page-subtitle').textContent = '基础设置';
@@ -2596,6 +2629,9 @@
             } else if (tab === 'analysis') {
                 document.getElementById('page-subtitle').textContent = '经营分析';
                 renderAnalysis();
+            } else if (tab === 'manalysis') {
+                document.getElementById('page-subtitle').textContent = '月度分析';
+                renderMonthAnalysis();
             }
         }
 
@@ -5658,6 +5694,156 @@
             mountBriefAnalysis('analysis-brief-profit', BA_ANALYSIS_KEYS.profit);
         }
 
+        // ============ 月度分析（未完成月份的月度内数据分析） ============
+        // v1.30.273：定位「未完成月份/非历史月份」的月度内分析，分析月份自动取 app 最新月份（下月自动变 10月…）。
+        // 数据源 = 「外贸产量质量」模块每日明细；与该页同规则：同一天第 3 条起的记录为修正数据（黄色行），聚合时忽略。
+        // 指标3 团队表现（扣款占比/扣款绝对值）：工段质量扣款目前仅整月汇总，待支持按旬录入后开放（页面已预留）。
+
+        // 阶段口径：上旬=1-10日，中旬=11-20日，下旬=21-月底；返回 0/1/2
+        function manalysisPhaseOf(day) {
+            const d = parseInt(day, 10) || 0;
+            if (d <= 10) return 0;
+            if (d <= 20) return 1;
+            return 2;
+        }
+        const MANALYSIS_PHASE_NAMES = ['上旬', '中旬', '下旬'];
+
+        // 分析月份（app 最新月份）的每日明细：仅 50板/75板，剔除同日第 3 条起的修正数据
+        function getManalysisRecords() {
+            const monthName = getLatestMonth();
+            if (!monthName) return { monthName: '', recs: [] };
+            const yk = findYieldMonthKey(monthName);
+            const all = ((yk && yieldData.months[yk] && yieldData.months[yk].records) || [])
+                .filter(r => r.spec === '50板' || r.spec === '75板')
+                .sort((a, b) => (parseInt(a.date, 10) || 0) - (parseInt(b.date, 10) || 0));
+            const daySeq = {};
+            const recs = all.filter(r => {
+                const seq = (daySeq[r.date] = (daySeq[r.date] || 0) + 1);
+                return seq <= 2; // 第 3 条起=修正数据（黄色行），忽略
+            });
+            return { monthName, recs };
+        }
+
+        // 记录集汇总：返回 {产量, 修补, 不良}；spec 传 '50板'/'75板' 时仅该规格，否则合并
+        function manalysisSum(recs, spec) {
+            let y = 0, rep = 0, def = 0;
+            recs.forEach(r => {
+                if (spec && r.spec !== spec) return;
+                y += parseFloat(r.yieldQty) || 0;
+                rep += parseFloat(r.repair) || 0;
+                def += parseFloat(r.defect) || 0;
+            });
+            return { 产量: y, 修补: rep, 不良: def };
+        }
+
+        function renderMonthAnalysis() {
+            const cEl = document.getElementById('manalysis-yield-chart');
+            const tEl = document.getElementById('manalysis-phase-table');
+            const tagEl = document.getElementById('manalysis-month-tag');
+            const { monthName, recs } = getManalysisRecords();
+            const shortLabel = monthName ? (parseMonthName(monthName).month + '月') : '—';
+            if (tagEl) tagEl.textContent = monthName || '暂无月份';
+            const emptyTip = monthName
+                ? '「' + monthName + '」暂无每日明细数据，请先到「外贸产量质量」模块录入。'
+                : '暂无月份数据。';
+
+            // ===== 指标1：外贸产量质量（每日明细组合图：柱=可入库产量 50/75板，线=合格率；类型同经营分析模块） =====
+            if (cEl) {
+                disposeAnalysisChart('manalysisYield');
+                if (recs.length === 0) {
+                    cEl.innerHTML = '<div class="analysis-empty">' + emptyTip + '</div>';
+                } else {
+                    const byDay = {};
+                    recs.forEach(r => {
+                        const d = parseInt(r.date, 10) || 0;
+                        if (!byDay[d]) byDay[d] = [];
+                        byDay[d].push(r);
+                    });
+                    const days = Object.keys(byDay).map(Number).sort((a, b) => a - b);
+                    const wh50 = [], wh75 = [], q50 = [], q75 = [];
+                    days.forEach(d => {
+                        const s50 = manalysisSum(byDay[d], '50板');
+                        const s75 = manalysisSum(byDay[d], '75板');
+                        wh50.push(safeGood(s50.产量, s50.不良));
+                        wh75.push(safeGood(s75.产量, s75.不良));
+                        q50.push(s50.产量 > 0 ? (s50.产量 - s50.不良 - s50.修补) / s50.产量 * 100 : null);
+                        q75.push(s75.产量 > 0 ? (s75.产量 - s75.不良 - s75.修补) / s75.产量 * 100 : null);
+                    });
+                    cEl.innerHTML = '<div class="analysis-chart-wrap"><canvas id="manalysis-yield-canvas"></canvas></div>';
+                    const mctx = document.getElementById('manalysis-yield-canvas');
+                    if (mctx) {
+                        _analysisCharts['manalysisYield'] = new Chart(mctx, {
+                            type: 'bar',
+                            data: {
+                                labels: days.map(d => d + '日'),
+                                datasets: [
+                                    { type: 'bar', label: '可入库产量-50板', data: wh50, backgroundColor: '#5b9bd5', yAxisID: 'y', order: 2, barPercentage: 0.55, categoryPercentage: 0.72, maxBarThickness: 30, borderRadius: 3 },
+                                    { type: 'bar', label: '可入库产量-75板', data: wh75, backgroundColor: '#ed7d31', yAxisID: 'y', order: 2, barPercentage: 0.55, categoryPercentage: 0.72, maxBarThickness: 30, borderRadius: 3 },
+                                    { type: 'line', label: '合格率-50板', data: q50, borderColor: '#2e7d32', backgroundColor: '#2e7d32', borderWidth: 3, pointRadius: 4, pointHoverRadius: 6, fill: false, tension: 0.1, yAxisID: 'y1', order: 1, spanGaps: true },
+                                    { type: 'line', label: '合格率-75板', data: q75, borderColor: '#ffd400', backgroundColor: '#ffd400', pointBackgroundColor: '#d4a000', borderWidth: 3, pointRadius: 4, pointHoverRadius: 6, fill: false, tension: 0.1, yAxisID: 'y1', order: 1, spanGaps: true }
+                                ]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                interaction: { mode: 'index', intersect: false },
+                                plugins: {
+                                    legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } }
+                                },
+                                scales: {
+                                    x: { grid: { display: false } },
+                                    y: {
+                                        type: 'linear',
+                                        position: 'left',
+                                        title: { display: true, text: '可入库产量(方)', font: { size: 11 } },
+                                        beginAtZero: true
+                                    },
+                                    y1: {
+                                        type: 'linear',
+                                        position: 'right',
+                                        title: { display: true, text: '合格率(%)', font: { size: 11 } },
+                                        grid: { drawOnChartArea: false }
+                                    }
+                                }
+                            }
+                        });
+                    }
+                }
+            }
+
+            // ===== 指标2：阶段比较（表格结构同经营分析·产量质量表，行=上旬/中旬/下旬） =====
+            // 说明：每日明细仅含外贸规格（50板/75板），故「可入库总产量」=「外贸可入库产量」、外贸产量占比=100%。
+            if (tEl) {
+                if (recs.length === 0) {
+                    tEl.innerHTML = '<div class="analysis-empty">' + emptyTip + '</div>';
+                } else {
+                    const phaseRecs = [[], [], []];
+                    recs.forEach(r => phaseRecs[manalysisPhaseOf(r.date)].push(r));
+                    const rows = phaseRecs.map(prs => {
+                        const s = manalysisSum(prs, null);
+                        const warehouse = safeGood(s.产量, s.不良); // 与经营分析 getMonthYieldStats 同口径（合并后 safeGood）
+                        return {
+                            warehouse,
+                            qual: s.产量 > 0 ? (s.产量 - s.不良 - s.修补) / s.产量 * 100 : 0,
+                            repairRate: s.产量 > 0 ? s.修补 / s.产量 * 100 : 0,
+                            defectRate: s.产量 > 0 ? s.不良 / s.产量 * 100 : 0
+                        };
+                    });
+                    let h = '<div class="table-scroll"><table class="analysis-table center"><thead><tr><th>阶段</th><th>可入库总产量(方)</th><th>外贸可入库产量(方)</th><th>外贸产量占比(%)</th><th>合格率(%)</th><th>修补率(%)</th><th>不良率(%)</th></tr></thead><tbody>';
+                    rows.forEach((r0, i) => {
+                        h += `<tr><td>${shortLabel}${MANALYSIS_PHASE_NAMES[i]}</td><td>${fmtNum(r0.warehouse)}</td><td>${fmtNum(r0.warehouse)}</td><td>${fmtPct(r0.warehouse > 0 ? 100 : 0)}</td><td>${fmtPct(r0.qual)}</td><td>${fmtPct(r0.repairRate)}</td><td>${fmtPct(r0.defectRate)}</td></tr>`;
+                    });
+                    // 合计行：全月已录部分（时间未到/未录的下旬自然偏小，属预期）
+                    const tSum = manalysisSum(recs, null);
+                    const tWh = safeGood(tSum.产量, tSum.不良);
+                    h += `<tr class="analysis-total"><td>合计(已录)</td><td>${fmtNum(tWh)}</td><td>${fmtNum(tWh)}</td><td>${fmtPct(tWh > 0 ? 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? (tSum.产量 - tSum.不良 - tSum.修补) / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.修补 / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.不良 / tSum.产量 * 100 : 0)}</td></tr>`;
+                    h += '</tbody></table></div>';
+                    tEl.innerHTML = h;
+                }
+            }
+            // 指标3 团队表现：预留占位（HTML 静态提示），待「月度数据」支持按旬扣款录入后开放
+        }
+
         // ============ 简要分析（可折叠 / 可编辑） ============
         const BA_COCKPIT_KEY = 'brief_analysis_cockpit';
         const BA_STAGE_KEY = 'brief_analysis_stage';
@@ -6877,7 +7063,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.272';
+        const APP_VERSION = 'v1.30.273';
 
         function forceRefresh() {
             if ('caches' in window) {
@@ -6899,6 +7085,7 @@
         const PDF_PAGES = [
             { id: 'cockpit', name: '经营驾驶舱', def: true,  render: function(){ try{ renderCockpit(); }catch(e){} } },
             { id: 'analysis', name: '经营分析', def: true,  render: function(){ try{ renderAnalysis(); }catch(e){} } },
+            { id: 'manalysis', name: '月度分析', def: false, render: function(){ try{ renderMonthAnalysis(); }catch(e){} } },
             { id: 'profit',  name: '经营利润', def: false, render: function(){ try{ renderProfit(); }catch(e){} } },
             { id: 'order',   name: '订单履约', def: false, render: function(){ try{ renderOrderFulfillment(); }catch(e){} } },
             { id: 'yield',   name: '外贸产量质量', def: false, render: function(){ try{ renderYieldQuality(); }catch(e){} } },
