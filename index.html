@@ -135,6 +135,10 @@
         .analysis-spark-row td { padding: 3px 5px; }
         .spark { display: block; margin: 0 auto; max-width: 100%; height: auto; } /* 窄列里迷你图按列宽等比缩小 */
         .analysis-table tr.analysis-total td { background: #fff8e1; font-weight: 700; }
+        /* v1.30.283：经营分析模块的「均值/累计」行只加粗、不再铺黄底；黄色底纹改标在「最新月份」行上 */
+        .analysis-table tr.analysis-total.avg-row td,
+        .analysis-table tr.analysis-total.cum-row td { background: transparent; font-weight: 700; }
+        .analysis-table tr.analysis-latest td { background: #fff8e1; }
         .analysis-table td.neg { color: #d9534f; font-weight: 700; }
         .analysis-table td.pos { color: #2e9e5b; }
         .analysis-empty { padding: 14px; text-align: center; color: #999; font-size: 15px; }
@@ -2232,7 +2236,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.282</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.283</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -5582,7 +5586,7 @@
                     };
                     let h = '<div class="table-scroll"><table class="analysis-table center"><thead><tr><th>月份</th><th>可入库总产量(方)</th><th>外贸可入库产量(方)</th><th>外贸产量占比(%)</th><th>合格率(%)</th><th>修补率(%)</th><th>不良率(%)</th></tr></thead><tbody>';
                     rows.forEach((s, i) => {
-                        h += `<tr><td>${safeLabel(i)}</td><td>${fmtNum(s.total)}</td><td>${fmtNum(s.warehouse)}</td><td>${fmtPct(s.ratio)}</td><td>${fmtPct(s.qual)}</td><td>${fmtPct(s.repairRate)}</td><td>${fmtPct(s.defectRate)}</td></tr>`;
+                        h += `<tr${i === rows.length - 1 ? ' class="analysis-latest"' : ''}><td>${safeLabel(i)}</td><td>${fmtNum(s.total)}</td><td>${fmtNum(s.warehouse)}</td><td>${fmtPct(s.ratio)}</td><td>${fmtPct(s.qual)}</td><td>${fmtPct(s.repairRate)}</td><td>${fmtPct(s.defectRate)}</td></tr>`;
                     });
                     const yieldMeans = {};
                     yieldKeys.forEach(k => yieldMeans[k] = avg(rows, k));
@@ -5639,7 +5643,7 @@
                             acc.qual.push(qual);
                             acc.rep.push(repairRate);
                             acc.def.push(defectRate);
-                            foreignHtml += '<tr>';
+                            foreignHtml += `<tr${i === months.length - 1 ? ' class="analysis-latest"' : ''}>`;
                             if (si === 0) foreignHtml += `<td rowspan="2">${safeLabel(i)}</td>`;
                             foreignHtml += `<td>${spec}</td><td>${fmtNum(warehouse)}</td><td>${fmtPct(yieldRatio)}</td><td>${fmtPct(qual)}</td><td>${fmtPct(repairRate)}</td><td>${fmtPct(defectRate)}</td></tr>`;
                         });
@@ -5789,7 +5793,7 @@
                     DEPT_NAMES.forEach(nm => ha += `<th>${nm}</th>`);
                     ha += '</tr></thead><tbody>';
                     dStats.forEach((d, i) => {
-                        ha += `<tr><td>${safeLabel(i)}</td>`;
+                        ha += `<tr${i === dStats.length - 1 ? ' class="analysis-latest"' : ''}><td>${safeLabel(i)}</td>`;
                         DEPT_NAMES.forEach(nm => {
                             const v = d.rows.find(r => r.name === nm)?.v || 0;
                             ha += `<td>${fmtNum(v)}</td>`;
@@ -5816,7 +5820,7 @@
                     DEPT_NAMES.forEach(nm => hr += `<th>${nm}</th>`);
                     hr += '</tr></thead><tbody>';
                     dStats.forEach((d, i) => {
-                        hr += `<tr><td>${safeLabel(i)}</td>`;
+                        hr += `<tr${i === dStats.length - 1 ? ' class="analysis-latest"' : ''}><td>${safeLabel(i)}</td>`;
                         DEPT_NAMES.forEach(nm => {
                             const v = d.rows.find(r => r.name === nm)?.v || 0;
                             const ratio = d.total > 0 ? v / d.total : null;
@@ -5845,7 +5849,7 @@
                     DEPT_NAMES.forEach(nm => hw += `<th>${nm}</th>`);
                     hw += '</tr></thead><tbody>';
                     wStats.forEach((w, i) => {
-                        hw += `<tr><td>${safeLabel(i)}</td>`;
+                        hw += `<tr${i === wStats.length - 1 ? ' class="analysis-latest"' : ''}><td>${safeLabel(i)}</td>`;
                         DEPT_NAMES.forEach(nm => {
                             const v = w.find(r => r.name === nm)?.maxWage || 0;
                             hw += `<td>${fmtNum(v)}</td>`;
@@ -5919,7 +5923,7 @@
                     };
                     let h = '<div class="table-scroll"><table class="analysis-table wide center profit-tbl"><thead><tr><th>月份</th><th>可入库总产量</th><th>可实现总收入</th><th>EBITDA</th><th>DOL</th><th>盈亏平衡点产量</th><th>考核利润</th><th>盈亏平衡点产量（考核）</th></tr></thead><tbody>';
                     pStats.forEach((p, i) => {
-                        h += `<tr><td>${safeProfitLabel(i)}</td><td>${fmtNum(p.warehouse)}</td><td>${toWan(p.realizableRevenue)}</td><td>${toWan(p.ebit)}</td><td>${dolFmt(p.contributionMargin, p.fixedCost)}</td><td>${bepFmt(p.warehouse, p.contributionMargin, p.fixedCost)}</td><td>${toWan(p.assessProfit)}</td><td>${bepKFmt(p.warehouse, p.contributionMargin, p.fixedCost + (p.fundCost || 0))}</td></tr>`;
+                        h += `<tr${i === pStats.length - 1 ? ' class="analysis-latest"' : ''}><td>${safeProfitLabel(i)}</td><td>${fmtNum(p.warehouse)}</td><td>${toWan(p.realizableRevenue)}</td><td>${toWan(p.ebit)}</td><td>${dolFmt(p.contributionMargin, p.fixedCost)}</td><td>${bepFmt(p.warehouse, p.contributionMargin, p.fixedCost)}</td><td>${toWan(p.assessProfit)}</td><td>${bepKFmt(p.warehouse, p.contributionMargin, p.fixedCost + (p.fundCost || 0))}</td></tr>`;
                     });
                     const n = pStats.length;
                     const avg = arr => n ? arr.reduce((s, v) => s + v, 0) / n : 0;
@@ -5978,7 +5982,7 @@
                     const cumCM = sum(pStats.map(p => p.contributionMargin));
                     const cumFC = sum(pStats.map(p => p.fixedCost));
                     const cumFund = sum(pStats.map(p => p.fundCost || 0));
-                    h += `<tr class="analysis-total"><td>累计</td><td>${fmtNum(cumWarehouse)}</td><td>${toWan(cumRevenue)}</td><td>${toWan(cumEbit)}</td><td>${dolFmt(cumCM, cumFC)}</td><td>${bepFmt(cumWarehouse, cumCM, cumFC)}</td><td>${toWan(cumAssess)}</td><td>${bepKFmt(cumWarehouse, cumCM, cumFC + cumFund)}</td></tr>`;
+                    h += `<tr class="analysis-total cum-row"><td>累计</td><td>${fmtNum(cumWarehouse)}</td><td>${toWan(cumRevenue)}</td><td>${toWan(cumEbit)}</td><td>${dolFmt(cumCM, cumFC)}</td><td>${bepFmt(cumWarehouse, cumCM, cumFC)}</td><td>${toWan(cumAssess)}</td><td>${bepKFmt(cumWarehouse, cumCM, cumFC + cumFund)}</td></tr>`;
                     h += '</tbody></table></div>';
                     pEl.innerHTML = h;
                 }
@@ -7436,7 +7440,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.282';
+        const APP_VERSION = 'v1.30.283';
 
         function forceRefresh() {
             if ('caches' in window) {
