@@ -374,7 +374,7 @@
         }
         /* 月度分析·阶段比较「总产量」手输框：外观与表格其它数字完全一致（居中 / 同字号 / 无边框） */
         input.phase-total-input {
-            width: 100%;
+            width: 78px;
             border: none;
             background: transparent;
             padding: 0;
@@ -2229,7 +2229,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.278</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.279</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -6115,7 +6115,7 @@
         // ===== 指标2：阶段比较（行=上旬/中旬/下旬，仅显示已有数据的阶段） =====
         // 说明：① 每日明细仅含外贸规格（50板/75板）；② 黄色修正数据条（同日第3条起）计入本表（v1.30.274）；
         //       ③ 无数据的阶段（如下旬未到/未录）整行不出现，录入后自动出现；
-        //       ④ v1.30.277：总产量(方)=手动输入（存 yieldData.months[yk].phaseTotals），外贸占比=外贸可入库/总产量 自动算。
+        //       ④ v1.30.277：可入库总产量(方)=手动输入（存 yieldData.months[yk].phaseTotals），外贸占比=外贸可入库/可入库总产量 自动算。
         function renderPhaseComparison() {
             const tEl = document.getElementById('manalysis-phase-table');
             if (!tEl) return;
@@ -6152,7 +6152,7 @@
                     defectRate: s.产量 > 0 ? s.不良 / s.产量 * 100 : 0
                 });
             });
-            let h = '<div class="table-scroll"><table class="analysis-table center"><thead><tr><th>阶段</th><th>总产量(方)</th><th>外贸分拣量(方)</th><th>外贸可入库产量(方)</th><th>外贸占比(%)</th><th>合格率(%)</th><th>修补率(%)</th><th>不良率(%)</th></tr></thead><tbody>';
+            let h = '<div class="table-scroll"><table class="analysis-table center"><thead><tr><th>阶段</th><th style="width:120px;">可入库总产量(方)</th><th>外贸分拣量(方)</th><th>外贸可入库产量(方)</th><th>外贸占比(%)</th><th>合格率(%)</th><th>修补率(%)</th><th>不良率(%)</th></tr></thead><tbody>';
             rows.forEach(r0 => {
                 h += `<tr><td>${r0.label}</td>`
                     + `<td><input type="text" inputmode="decimal" class="phase-total-input" id="phase-total-${r0.i}" data-wh="${r0.warehouse}" value="${fmtNum(r0.total)}" onfocus="this.select()" onkeydown="if(event.key==='Enter') this.blur()" onchange="onPhaseTotalEdit(${r0.i})"></td>`
@@ -6166,7 +6166,7 @@
             const tDRate = tSum.产量 > 0 ? tSum.不良 / tSum.产量 : 0;
             const tSort = (1 - tDRate) > 0 ? tWh / (1 - tDRate) : null;
             const tTotal = ['0', '1', '2'].reduce((s2, k) => s2 + (parseFloat(pt[k]) || 0), 0);
-            h += `<tr class="analysis-total"><td>合计(已录)</td><td id="phase-total-sum">${fmtNum(tTotal)}</td><td>${tSort === null ? '—' : fmtNum(tSort)}</td><td>${fmtNum(tWh)}</td><td id="phase-ratio-sum">${tTotal > 0 ? fmtPct(tWh / tTotal * 100) : '—'}</td><td>${fmtPct(tSum.产量 > 0 ? (tSum.产量 - tSum.不良 - tSum.修补) / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.修补 / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.不良 / tSum.产量 * 100 : 0)}</td></tr>`;
+            h += `<tr class="analysis-total"><td>合计</td><td id="phase-total-sum">${fmtNum(tTotal)}</td><td>${tSort === null ? '—' : fmtNum(tSort)}</td><td>${fmtNum(tWh)}</td><td id="phase-ratio-sum">${tTotal > 0 ? fmtPct(tWh / tTotal * 100) : '—'}</td><td>${fmtPct(tSum.产量 > 0 ? (tSum.产量 - tSum.不良 - tSum.修补) / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.修补 / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.不良 / tSum.产量 * 100 : 0)}</td></tr>`;
             h += '</tbody></table></div>';
             tEl.innerHTML = h;
         }
@@ -7436,7 +7436,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.278';
+        const APP_VERSION = 'v1.30.279';
 
         function forceRefresh() {
             if ('caches' in window) {
