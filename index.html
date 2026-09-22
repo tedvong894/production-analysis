@@ -2211,9 +2211,9 @@
             </div>
         </div>
 
-        <!-- 指标1：外贸产量质量（每日明细组合图，忽略黄色修正数据条） -->
+        <!-- 指标1：每日明细趋势图（外贸每日明细组合图，忽略黄色修正数据条） -->
         <div class="analysis-card">
-            <div class="analysis-card-title"><span class="idx">1</span>外贸产量质量</div>
+            <div class="analysis-card-title"><span class="idx">1</span>每日明细趋势图</div>
             <div id="manalysis-yield-chart"></div>
         </div>
 
@@ -2232,7 +2232,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.281</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.282</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -6043,7 +6043,7 @@
                 ? '「' + monthName + '」暂无每日明细数据，请先到「外贸产量质量」模块录入。'
                 : '暂无月份数据。';
 
-            // ===== 指标1：外贸产量质量（每日明细组合图：柱=可入库产量 50/75板，线=合格率；类型同经营分析模块） =====
+            // ===== 指标1：每日明细趋势图（外贸每日明细组合图：柱=可入库产量 50/75板，线=合格率） =====
             if (cEl) {
                 disposeAnalysisChart('manalysisYield');
                 if (recs.length === 0) {
@@ -7436,7 +7436,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.281';
+        const APP_VERSION = 'v1.30.282';
 
         function forceRefresh() {
             if ('caches' in window) {
@@ -7467,17 +7467,20 @@
             { id: 'params',  name: '基础设置', def: false, render: function(){ try{ renderSalary(); }catch(e){} } }
         ];
 
-        // ---- 表格级选择：仅「经营驾驶舱 / 经营分析」两个模块支持，其余模块仍按整页勾选 ----
-        const PDF_TABLE_MODULES = ['cockpit', 'analysis'];
+        // ---- 表格级选择：「经营驾驶舱 / 经营分析 / 月度分析」支持，其余模块仍按整页勾选 ----
+        const PDF_TABLE_MODULES = ['cockpit', 'analysis', 'manalysis'];
         const _pdfTableCache = {};   // pageId -> [{key,name}]（仅用于渲染勾选框，节点每次导出时重新扫描）
 
         function _pdfTxt(el) { return el ? (el.textContent || '').trim() : ''; }
 
-        // 驾驶舱：抬头 + 第一排大区块 + 第二排各汇总区块 + 简要分析
+        // 驾驶舱：抬头 + 本阶段综合分析（顶部）+ 第一排大区块 + 第二排各汇总区块 + 简要分析
         function scanCockpitTables(el) {
             const out = [];
             const head = el.querySelector('.cockpit-header');
             if (head) out.push({ key: 'head', name: '抬头 · 数据月份', node: head });
+            // v1.30.282：本阶段综合分析在页面中位于产量质量汇总之前，勾选与导出顺序同步
+            const sa = el.querySelector('#cockpit-stage-analysis');
+            if (sa) out.push({ key: 'stage', name: '本阶段综合分析', node: sa });
             const top = el.querySelector('.cockpit-section:not(.cockpit-row .cockpit-section)');
             if (top) out.push({ key: 'top', name: _pdfTxt(top.querySelector('.cockpit-section-title')) || '产量质量 · 月度累计汇总', node: top });
             Array.from(el.querySelectorAll('.cockpit-row .cockpit-section')).forEach(function (s, i) {
@@ -7485,8 +7488,6 @@
             });
             const ba = el.querySelector('#cockpit-brief-analysis');
             if (ba) out.push({ key: 'brief', name: '简要分析', node: ba });
-            const sa = el.querySelector('#cockpit-stage-analysis');
-            if (sa) out.push({ key: 'stage', name: '本阶段综合分析', node: sa });
             return out;
         }
 
@@ -7522,15 +7523,27 @@
             return out;
         }
 
+        // 月度分析：3 个指标卡（导出时逐个可选，默认都不勾）
+        function scanManalysisTables(el) {
+            const out = [];
+            Array.from(el.querySelectorAll('.analysis-card')).forEach(function (card, ci) {
+                const titleEl = card.querySelector('.analysis-card-title');
+                const name = ((_pdfTxt(titleEl) || ('指标 ' + (ci + 1))).replace(/^(\d+)\s*/, '$1 '));
+                out.push({ key: 'card' + ci, name: name, node: card });
+            });
+            return out;
+        }
+
         function scanPdfTables(pageId) {
             const el = document.getElementById('page-' + pageId);
             if (!el) return [];
             if (pageId === 'cockpit') return scanCockpitTables(el);
             if (pageId === 'analysis') return scanAnalysisTables(el);
+            if (pageId === 'manalysis') return scanManalysisTables(el);
             return [];
         }
 
-        // 打开弹窗时先渲染这两个模块并缓存「表名称」，供勾选框显示
+        // 打开弹窗时先渲染这些模块并缓存「表名称」，供勾选框显示
         function ensurePdfTableCache() {
             PDF_TABLE_MODULES.forEach(function (id) {
                 const p = PDF_PAGES.find(x => x.id === id);
@@ -7627,12 +7640,12 @@
 
         function collectBlocks(el, id) {
             if (id === 'cockpit') {
-                // 驾驶舱：标题头 + 上方大区块 + 下方三栏并排的行 + 底部简要分析（整行截图，保留并排格局）
+                // 驾驶舱：标题头 + 本阶段综合分析（顶部）+ 上方大区块 + 下方三栏并排的行 + 底部简要分析（整行截图，保留并排格局）
                 const topSection = el.querySelector('.cockpit-section:not(.cockpit-row .cockpit-section)');
                 const row = el.querySelector('.cockpit-row');
                 const ba = el.querySelector('#cockpit-brief-analysis');
                 const sa = el.querySelector('#cockpit-stage-analysis');
-                return [el.querySelector('.cockpit-header'), topSection, row, ba, sa].filter(Boolean);
+                return [el.querySelector('.cockpit-header'), sa, topSection, row, ba].filter(Boolean);
             }
             if (id === 'analysis') {
                 // 把经营分析拆到「表」级别，按 DOM 顺序收集：标题/子标题+表格/图表
@@ -7768,6 +7781,9 @@
                                 blocks = [];
                                 const head = el.querySelector('.cockpit-header');
                                 if (head && picked.has('head')) blocks.push(head);
+                                // v1.30.282：本阶段综合分析置顶（在产量质量汇总之前）
+                                const saTop = el.querySelector('#cockpit-stage-analysis');
+                                if (saTop && picked.has('stage')) blocks.push(saTop);
                                 const topSec = el.querySelector('.cockpit-section:not(.cockpit-row .cockpit-section)');
                                 if (topSec && picked.has('top')) blocks.push(topSec);
                                 const allRowSecs = Array.from(el.querySelectorAll('.cockpit-row .cockpit-section'));
@@ -7791,8 +7807,6 @@
                                 });
                                 const ba = el.querySelector('#cockpit-brief-analysis');
                                 if (ba && picked.has('brief')) blocks.push(ba);
-                                const sa = el.querySelector('#cockpit-stage-analysis');
-                                if (sa && picked.has('stage')) blocks.push(sa);
                             }
                         } else if (p.id === 'analysis') {
                             blocks = [];
@@ -7817,6 +7831,11 @@
                                 }
                                 blocks.push(t.node);
                             });
+                        } else if (p.id === 'manalysis') {
+                            // v1.30.282：月度分析按「指标卡」可选导出（3 个指标默认都不勾，用户按需选）
+                            blocks = [];
+                            if (el.firstElementChild) blocks.push(el.firstElementChild); // 页面抬头（月度分析 + 分析月份）
+                            allT.forEach(function (t) { if (picked.has(t.key)) blocks.push(t.node); });
                         } else {
                             blocks = hit.map(t => t.node);
                         }
