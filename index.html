@@ -1587,10 +1587,15 @@
 8	12	0	6	2" style="width:100%; min-height:42px; padding:6px; border:1px solid #ddd; border-radius:6px; font-size:12px; box-sizing:border-box; resize:vertical;"></textarea>
             </div>
             <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px 0;">
-                <span style="font-size:13px; color:#333;">每日明细（<span id="deduction-month-label"></span>）</span>
+                <span class="collapse-toggle" id="deduction-daily-toggle" onclick="toggleDeductionDailyCollapse()" style="font-size:13px; color:#333;">
+                    <span class="collapse-arrow"></span>
+                    每日明细（<span id="deduction-month-label"></span>）
+                </span>
                 <button class="btn btn-save" style="font-size:12px; padding:4px 12px;" onclick="openBatchModal('dd')">批量添加</button>
             </div>
-            <div id="deduction-daily-body" style="padding:10px 12px;"></div>
+            <div id="deduction-daily-wrap" class="collapse-content">
+                <div id="deduction-daily-body" style="padding:10px 12px;"></div>
+            </div>
         </div>
         <!-- 历史数据区块 -->
         <div id="yield-history-section" style="margin-top:14px;" data-page-node-id="Sv6WLuug2HPTTZsq9RGoLK"></div>
@@ -2236,7 +2241,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.283</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.284</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -3569,9 +3574,31 @@
                 if (c) c.textContent = total > 0 ? fmtPct(vals[i] / total * 100) : '0.00%';
             });
         }
+        // v1.30.284：工段扣款每日明细 折叠/展开（状态存 localStorage，跨刷新记忆）
+        function toggleDeductionDailyCollapse() {
+            const wrap = document.getElementById('deduction-daily-wrap');
+            const toggle = document.getElementById('deduction-daily-toggle');
+            if (!wrap || !toggle) return;
+            const collapsed = wrap.classList.toggle('collapsed');
+            toggle.classList.toggle('collapsed', collapsed);
+            try {
+                if (collapsed) localStorage.setItem('deduction_daily_collapsed', '1');
+                else localStorage.removeItem('deduction_daily_collapsed');
+            } catch (e) {}
+        }
+        function applyDeductionDailyCollapse() {
+            const wrap = document.getElementById('deduction-daily-wrap');
+            const toggle = document.getElementById('deduction-daily-toggle');
+            if (!wrap || !toggle) return;
+            let c = false;
+            try { c = localStorage.getItem('deduction_daily_collapsed') === '1'; } catch (e) {}
+            wrap.classList.toggle('collapsed', c);
+            toggle.classList.toggle('collapsed', c);
+        }
         function renderDeductionDaily() {
             const box = document.getElementById('deduction-daily-body');
             if (!box) return;
+            applyDeductionDailyCollapse();
             const m = getDeductionMonthObj();
             const labelEl = document.getElementById('deduction-month-label');
             if (labelEl) labelEl.textContent = yieldData.currentMonth || '';
@@ -3586,7 +3613,9 @@
                 h += `<tr><td rowspan="2">${r.date}日</td>`;
                 h += DEPT_NAMES.map(n => `<td class="right"><input type="number" class="deduction-input" id="dd-${r.id}-${n}" min="0" value="${fmtNum((r.values && r.values[n]) || 0)}" onchange="onDeductionCellEdit('${r.id}','${n}')"></td>`).join('');
                 h += `<td rowspan="2"><button class="btn-icon" onclick="deleteDeductionDay('${r.id}')" title="删除">🗑️</button></td></tr>`;
-                h += '<tr class="calc-row"><td style="color:#999;font-size:12px;">占比</td>';
+                // v1.30.284：不再放「占比」标签 td——上一行日期/删除格 rowspan=2 已占住本行第 1、7 列，
+                // 多出的标签格会把全部占比挤右一列、最后一个挤进表格外（错位根因）
+                h += '<tr class="calc-row">';
                 h += DEPT_NAMES.map(n => {
                     const v = parseFloat(r.values && r.values[n]) || 0;
                     return `<td class="right" style="color:#888;">${dayTotal > 0 ? fmtPct(v / dayTotal * 100) : '0.00%'}</td>`;
@@ -7440,7 +7469,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.283';
+        const APP_VERSION = 'v1.30.284';
 
         function forceRefresh() {
             if ('caches' in window) {
