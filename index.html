@@ -2145,7 +2145,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.274</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.275</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -5828,22 +5828,27 @@
                         if (prs.length === 0) return; // 该阶段尚无数据 → 不出现
                         const s = manalysisSum(prs, null);
                         const warehouse = safeGood(s.产量, s.不良); // 与经营分析 getMonthYieldStats 同口径（合并后 safeGood）
+                        // 外贸分拣量 = 外贸可入库产量 / (1-不良率)；不良率≥100% 时分母≤0 → 显示 —
+                        const dRate = s.产量 > 0 ? s.不良 / s.产量 : 0;
                         rows.push({
                             label: shortLabel + MANALYSIS_PHASE_NAMES[i],
+                            sortQty: (1 - dRate) > 0 ? warehouse / (1 - dRate) : null,
                             warehouse,
                             qual: s.产量 > 0 ? (s.产量 - s.不良 - s.修补) / s.产量 * 100 : 0,
                             repairRate: s.产量 > 0 ? s.修补 / s.产量 * 100 : 0,
                             defectRate: s.产量 > 0 ? s.不良 / s.产量 * 100 : 0
                         });
                     });
-                    let h = '<div class="table-scroll"><table class="analysis-table center"><thead><tr><th>阶段</th><th>外贸可入库产量(方)</th><th>合格率(%)</th><th>修补率(%)</th><th>不良率(%)</th></tr></thead><tbody>';
+                    let h = '<div class="table-scroll"><table class="analysis-table center"><thead><tr><th>阶段</th><th>外贸分拣量(方)</th><th>外贸可入库产量(方)</th><th>合格率(%)</th><th>修补率(%)</th><th>不良率(%)</th></tr></thead><tbody>';
                     rows.forEach(r0 => {
-                        h += `<tr><td>${r0.label}</td><td>${fmtNum(r0.warehouse)}</td><td>${fmtPct(r0.qual)}</td><td>${fmtPct(r0.repairRate)}</td><td>${fmtPct(r0.defectRate)}</td></tr>`;
+                        h += `<tr><td>${r0.label}</td><td>${r0.sortQty === null ? '—' : fmtNum(r0.sortQty)}</td><td>${fmtNum(r0.warehouse)}</td><td>${fmtPct(r0.qual)}</td><td>${fmtPct(r0.repairRate)}</td><td>${fmtPct(r0.defectRate)}</td></tr>`;
                     });
                     // 合计行：全月已录部分（含修正数据条）
                     const tSum = manalysisSum(allRecs, null);
                     const tWh = safeGood(tSum.产量, tSum.不良);
-                    h += `<tr class="analysis-total"><td>合计(已录)</td><td>${fmtNum(tWh)}</td><td>${fmtPct(tSum.产量 > 0 ? (tSum.产量 - tSum.不良 - tSum.修补) / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.修补 / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.不良 / tSum.产量 * 100 : 0)}</td></tr>`;
+                    const tDRate = tSum.产量 > 0 ? tSum.不良 / tSum.产量 : 0;
+                    const tSort = (1 - tDRate) > 0 ? tWh / (1 - tDRate) : null;
+                    h += `<tr class="analysis-total"><td>合计(已录)</td><td>${tSort === null ? '—' : fmtNum(tSort)}</td><td>${fmtNum(tWh)}</td><td>${fmtPct(tSum.产量 > 0 ? (tSum.产量 - tSum.不良 - tSum.修补) / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.修补 / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.不良 / tSum.产量 * 100 : 0)}</td></tr>`;
                     h += '</tbody></table></div>';
                     tEl.innerHTML = h;
                 }
@@ -7070,7 +7075,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.274';
+        const APP_VERSION = 'v1.30.275';
 
         function forceRefresh() {
             if ('caches' in window) {
