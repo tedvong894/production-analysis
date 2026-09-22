@@ -1964,7 +1964,7 @@
                 <!-- 月度利润：第一排汇总 -->
                 <div class="cockpit-section" id="cockpit-profit-section" style="--accent:#8a5cd0;" data-page-node-id="LBiX0Av51aweqNrQhmYSGR">
                     <div class="cockpit-section-head" data-page-node-id="Huc8h2cjdrxzuDDdpn8f6G">
-                        <div class="cockpit-section-title" style="--accent:#8a5cd0;" data-page-node-id="I1o0Uf8BqtCvcHVT4iXEoH">经营成果 · 汇总</div>
+                        <div class="cockpit-section-title" style="--accent:#8a5cd0;" data-page-node-id="I1o0Uf8BqtCvcHVT4iXEoH">经营成果 · 汇总（全月预估）</div>
                         <span class="cockpit-month" id="cockpit-profit-month" data-page-node-id="S5TahEDKfcyqP0k1bACxdQ">—</span>
                     </div>
                     <div class="cockpit-body" id="cockpit-profit-body" data-page-node-id="FCWncYKvI2pOmm0XYbfRfd"></div>
@@ -2232,7 +2232,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.280</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.281</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -5126,7 +5126,7 @@
             const cob = document.getElementById('cockpit-order-body');
             if (cob) cob.innerHTML = oHtml;
 
-            // 4) 经营成果汇总：取经营分析模块「经营成果」指标的 6 项数据（按所选数据月份），无预估列、无图表
+            // 4) 经营成果汇总：取经营分析模块「经营成果」指标的 6 项数据（按所选数据月份），全部为全月预估值，无预估列、无图表
             const profitName = selMonth;
             const profit = calcMonthProfit(profitName);
             const cpEl = document.getElementById('cockpit-profit-month');
@@ -5135,11 +5135,16 @@
             const foreignWhCur = getMonthYieldStats(profitName).warehouse;
             // 驾驶舱利润引用实时口径（人工÷时间系数），与经营利润卡片共用同一口径
             const rtCp = getRealTimeProfit(profitName);
-            // 盈亏平衡点产量＝可入库总产量×固定成本/边际贡献；边际贡献为 0 → —
-            const bep = profit.contributionMargin ? fmtNum(whCur * profit.fixedCost / profit.contributionMargin) : '—';
+            // v1.30.281：本卡全部指标取全月预估（实时值×时间系数）；历史月 tf=1 数值不变，与经营分析指标3 同口径
+            const tfCp = rtCp.tf || 1;
+            const whFull = whCur * tfCp;                  // 全月预估 可入库总产量
+            const foreignWhFull = foreignWhCur * tfCp;    // 全月预估 外贸可入库产量
+            // 盈亏平衡点产量＝全月可入库总产量×固定成本/全月边际贡献；边际贡献为 0 → —（tf 在分子分母抵消）
+            const cmFull = (profit.contributionMargin || 0) * tfCp;
+            const bep = cmFull ? fmtNum(whFull * profit.fixedCost / cmFull) : '—';
             let pHtml = `<table class="cockpit-table"><thead><tr><th>指标</th><th class="center">数值</th></tr></thead><tbody>`;
-            pHtml += `<tr><td>可入库总产量</td><td class="center">${fmtNum(whCur)}</td></tr>`;
-            pHtml += `<tr><td>外贸可入库产量</td><td class="center">${fmtNum(foreignWhCur)}</td></tr>`;
+            pHtml += `<tr><td>可入库总产量</td><td class="center">${fmtNum(whFull)}</td></tr>`;
+            pHtml += `<tr><td>外贸可入库产量</td><td class="center">${fmtNum(foreignWhFull)}</td></tr>`;
             pHtml += `<tr><td>可实现总收入</td><td class="center">${fmtMoney(profit.realizableRevenue * rtCp.tf)}</td></tr>`; // 全月预估值
             pHtml += `<tr><td>EBITDA</td><td class="center">${fmtMoney(rtCp.ebit * rtCp.tf)}</td></tr>`; // 全月预估值(实时×时间系数)
             pHtml += `<tr><td>考核利润</td><td class="center">${fmtMoney(rtCp.assess * rtCp.tf)}</td></tr>`; // 全月预估值(实时×时间系数)
@@ -7431,7 +7436,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.280';
+        const APP_VERSION = 'v1.30.281';
 
         function forceRefresh() {
             if ('caches' in window) {
