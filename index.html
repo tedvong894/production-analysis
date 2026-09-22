@@ -1501,6 +1501,15 @@
                 </table>
             </div>
         </div>
+
+        <!-- 工段质量扣款·每日明细（v1.30.276）：列=各工段，行=扣款绝对值(录入)+扣款占比(自动)；月度累计自动进月度数据 -->
+        <div class="card" style="margin-top:14px;">
+            <div class="card-header card-header-light" style="display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-size:13px; color:#333;">工段质量扣款（每日明细 · <span id="deduction-month-label"></span>）</span>
+                <button class="btn btn-save" style="font-size:12px; padding:4px 12px;" onclick="addDeductionDay()">+ 添加日期</button>
+            </div>
+            <div id="deduction-daily-body" style="padding:10px 12px;"></div>
+        </div>
         <!-- 历史数据区块 -->
         <div id="yield-history-section" style="margin-top:14px;" data-page-node-id="Sv6WLuug2HPTTZsq9RGoLK"></div>
     </div>
@@ -2145,7 +2154,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.275</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.276</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -2773,6 +2782,8 @@
             // 同步外贸产量质量模块的 50板/75板 累计数据（同月份）
             const yieldSynced = syncYieldToMonthly(monthName);
             if (yieldSynced) saveMonthly();
+            // v1.30.276：同步工段质量扣款每日明细累计（仅存在每日明细的月份覆盖；函数内有变更才 saveMonthly）
+            syncDeductionToMonthly(monthName);
 
             // 构建月份选择下拉框选项
             const allMonthNames = [monthlyData.currentMonth, ...monthlyData.months.filter(m => m.name !== monthlyData.currentMonth).map(m => m.name)];
@@ -2911,27 +2922,20 @@
                             <div class="dept-deduction-section">
                                 <div class="section-title-row" style="margin-bottom:6px;">
                                     <span class="section-title" style="margin:0; font-size:12px;">工段质量扣款</span>
-                                    <span style="display:inline-flex; align-items:center; gap:8px;">
-                                        <span class="deduction-date-tag" id="dept-deduction-date">${formatDeductionDate(monthRecord.deductionDate)}</span>
-                                        <button class="btn-sm" onclick="openBatchModal('deduction')" style="font-size:10px; padding:2px 7px;">录入</button>
-                                    </span>
+                                    <span class="deduction-date-tag">自动汇总「外贸产量质量·工段质量扣款」每日明细</span>
                                 </div>
                                 <table>
                                     <thead>
                                         <tr><th>工段</th>${DEPT_NAMES.map(n => `<th class="right">${n}</th>`).join('')}</tr>
                                     </thead>
                                     <tbody>
-                                        <tr>
+                                        <tr class="calc-row">
                                             <td>扣款</td>
-                                            ${DEPT_NAMES.map(name => `
-                                                <td class="right">
-                                                    <input type="number" id="cur-dept-${name}" value="${fmtNum(monthRecord.data.deptDeduction?.[name] ?? 0)}" class="deduction-input" min="0" onchange="onMonthlyCellEdit('dept')">
-                                                </td>
-                                            `).join('')}
+                                            ${monthlyDeductionValues(monthRecord).map(v => `<td class="right">${fmtNum(v)}</td>`).join('')}
                                         </tr>
                                         <tr class="calc-row" id="dept-deduction-ratio-row">
                                             <td>占比</td>
-                                            ${DEPT_NAMES.map(name => `<td class="right" id="disp-dept-ratio-${name}">0%</td>`).join('')}
+                                            ${(() => { const vs = monthlyDeductionValues(monthRecord); const tt = vs.reduce((a, b) => a + b, 0); return vs.map(v => `<td class="right">${tt > 0 ? fmtPct(v / tt * 100) : '0.00%'}</td>`).join(''); })()}
                                         </tr>
                                     </tbody>
                                 </table>
@@ -3165,6 +3169,7 @@
             if (!tbody || !summaryBody) return;
 
             const m = getCurYieldMonth();
+            renderDeductionDaily(); // v1.30.276：工段质量扣款每日明细随月份联动刷新
 
             // 给缺少 id 的记录补一个稳定 id（兼容旧数据，避免删除错位）
             let needSave = false;
@@ -3378,6 +3383,122 @@
         function findMonthlyRecord(monthName) {
             if (!monthName) return null;
             return monthlyData.months.find(m => m.name === monthName || monthName.endsWith(m.name) || m.name.endsWith(monthName)) || null;
+        }
+
+        // ============ 工段质量扣款·每日明细（外贸产量质量模块，v1.30.276） ============
+        // 数据存 yieldData.months[yk].deductions = [{id, date, values:{工段:金额}}]，随 YIELD_KEY 持久化/联网同步。
+        // 每天一条记录（5 个工段的扣款绝对值），扣款占比 = 该工段 / 当日合计 自动计算；月度数据模块的
+        // 「工段质量扣款」自动取本明细的月度累计并取消手工输入（历史月无每日明细时沿用旧手工值，不覆盖）。
+        function getDeductionMonthObj() {
+            const m = getCurYieldMonth();
+            if (!m.deductions) m.deductions = [];
+            return m;
+        }
+        // 某月每日扣款按工段累计；无每日明细返回 null（调用方回退旧手工月度值）
+        function getDeductionDailyTotal(monthName) {
+            const yk = findYieldMonthKey(monthName);
+            const arr = (yk && yieldData.months[yk] && yieldData.months[yk].deductions) || [];
+            if (arr.length === 0) return null;
+            const total = {};
+            DEPT_NAMES.forEach(n => { total[n] = 0; });
+            arr.forEach(r => DEPT_NAMES.forEach(n => { total[n] += parseFloat(r.values && r.values[n]) || 0; }));
+            return total;
+        }
+        // 月度数据·工段质量扣款显示值：有每日明细 → 每日累计；无 → 旧手工月度值
+        function monthlyDeductionValues(monthRecord) {
+            const t = getDeductionDailyTotal(monthRecord.name);
+            const legacy = (monthRecord.data && monthRecord.data.deptDeduction) || {};
+            return DEPT_NAMES.map(n => t ? (t[n] || 0) : (parseFloat(legacy[n]) || 0));
+        }
+        // 把每日累计写回月度数据 deptDeduction（仅存在每日明细的月份覆盖，历史月手工值不动）
+        function syncDeductionToMonthly(monthName) {
+            const total = getDeductionDailyTotal(monthName);
+            if (!total) return false;
+            const rec = findMonthlyRecord(monthName);
+            if (!rec) return false;
+            if (!rec.data.deptDeduction) rec.data.deptDeduction = {};
+            let changed = false;
+            DEPT_NAMES.forEach(n => {
+                const v = Math.round((total[n] || 0) * 10) / 10;
+                if (Math.abs((parseFloat(rec.data.deptDeduction[n]) || 0) - v) > 1e-9) changed = true;
+                rec.data.deptDeduction[n] = v;
+            });
+            if (changed) saveMonthly();
+            return changed;
+        }
+        function renderDeductionDaily() {
+            const box = document.getElementById('deduction-daily-body');
+            if (!box) return;
+            const m = getDeductionMonthObj();
+            const labelEl = document.getElementById('deduction-month-label');
+            if (labelEl) labelEl.textContent = yieldData.currentMonth || '';
+            const recs = [...m.deductions].sort((a, b) => (parseInt(a.date, 10) || 0) - (parseInt(b.date, 10) || 0));
+            if (recs.length === 0) {
+                box.innerHTML = '<div class="analysis-empty">暂无每日扣款记录，点右上「+ 添加日期」开始录入（列=各工段，只填扣款绝对值，占比自动算）。</div>';
+                return;
+            }
+            let h = '<div class="table-scroll"><table><thead><tr><th>日期</th>' + DEPT_NAMES.map(n => `<th class="right">${n}</th>`).join('') + '<th style="width:40px;"></th></tr></thead><tbody>';
+            recs.forEach(r => {
+                const dayTotal = DEPT_NAMES.reduce((s2, n) => s2 + (parseFloat(r.values && r.values[n]) || 0), 0);
+                h += `<tr><td rowspan="2">${r.date}日</td>`;
+                h += DEPT_NAMES.map(n => `<td class="right"><input type="number" class="deduction-input" min="0" value="${fmtNum((r.values && r.values[n]) || 0)}" onchange="onDeductionCellEdit('${r.id}','${n}')"></td>`).join('');
+                h += `<td rowspan="2"><button class="btn-icon" onclick="deleteDeductionDay('${r.id}')" title="删除">🗑️</button></td></tr>`;
+                h += '<tr class="calc-row"><td style="color:#999;font-size:12px;">占比</td>';
+                h += DEPT_NAMES.map(n => {
+                    const v = parseFloat(r.values && r.values[n]) || 0;
+                    return `<td class="right" style="color:#888;">${dayTotal > 0 ? fmtPct(v / dayTotal * 100) : '0.00%'}</td>`;
+                }).join('');
+                h += '</tr>';
+            });
+            // 合计行：各工段月度累计（与月度数据·工段质量扣款一致）
+            const totals = {};
+            DEPT_NAMES.forEach(n => { totals[n] = recs.reduce((s2, r) => s2 + (parseFloat(r.values && r.values[n]) || 0), 0); });
+            h += '<tr class="calc-total"><td>合计</td>' + DEPT_NAMES.map(n => `<td class="right">${fmtNum(totals[n])}</td>`).join('') + '<td></td></tr>';
+            h += '</tbody></table></div>';
+            box.innerHTML = h;
+        }
+        function addDeductionDay() {
+            if (!confirmYieldHistorical('添加工段质量扣款每日明细')) return;
+            const m = getDeductionMonthObj();
+            let next = 1;
+            const used = {};
+            m.deductions.forEach(r => { const d = parseInt(r.date, 10) || 0; used[d] = true; if (d >= next) next = d + 1; });
+            while (used[next]) next++;
+            if (next > 31) { showToast('本月日期已用完'); return; }
+            const values = {};
+            DEPT_NAMES.forEach(n => { values[n] = 0; });
+            m.deductions.push({ id: genId(), date: String(next), values });
+            saveDeductions();
+        }
+        function deleteDeductionDay(id) {
+            if (!confirmYieldHistorical('删除工段质量扣款每日明细')) return;
+            if (!confirm('确定删除该日扣款记录？')) return;
+            const m = getDeductionMonthObj();
+            const idx = m.deductions.findIndex(r => r.id === id);
+            if (idx < 0) return;
+            m.deductions.splice(idx, 1);
+            saveDeductions();
+        }
+        function onDeductionCellEdit(id, name) {
+            const m = getDeductionMonthObj();
+            const r = m.deductions.find(x => x.id === id);
+            if (!r) return;
+            const el = document.getElementById('dd-' + id + '-' + name);
+            if (!el) return;
+            const v = Math.max(0, parseFloat(el.value) || 0);
+            el.value = fmtNum(v);
+            if (!r.values) r.values = {};
+            r.values[name] = v;
+            saveDeductions();
+        }
+        // 扣款保存统一出口：持久化 + 同步月度数据 + 刷新本表 + 联动人工成本页
+        function saveDeductions() {
+            saveYield();
+            syncDeductionToMonthly(yieldData.currentMonth);
+            renderDeductionDaily();
+            if (document.getElementById('page-wage')?.classList.contains('active')) {
+                renderWagePrediction();
+            }
         }
 
         function getYieldSpecSummary(monthName, spec) {
@@ -7075,7 +7196,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.275';
+        const APP_VERSION = 'v1.30.276';
 
         function forceRefresh() {
             if ('caches' in window) {
