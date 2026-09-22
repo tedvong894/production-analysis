@@ -401,35 +401,38 @@
             white-space: nowrap;
         }
         .deduction-data-btn:hover { background: #f5f7fa; }
+        /* 菜单为普通文档流内联展开（不绝对定位：避免被 overflow 容器裁剪 / 遮挡 / 事件时序问题） */
         .deduction-data-menu {
             display: none;
-            position: absolute;
-            right: 0;
-            top: 22px;
-            z-index: 200;
+            margin: 2px 0 6px;
             background: #fff;
             border: 1px solid #e2e6ee;
             border-radius: 8px;
-            box-shadow: 0 6px 18px rgba(0,0,0,.12);
-            padding: 4px;
-            min-width: 100px;
+            padding: 3px;
+            gap: 3px;
         }
-        .deduction-data-menu.open { display: block; }
+        .deduction-data-menu.open { display: flex; }
         .deduction-data-menu button {
-            display: block;
-            width: 100%;
-            text-align: left;
+            flex: 1;
             border: none;
             background: transparent;
             font-size: 11px;
             color: #333;
-            padding: 6px 10px;
+            padding: 5px 8px;
             border-radius: 5px;
             cursor: pointer;
             white-space: nowrap;
         }
         .deduction-data-menu button:hover { background: #f0f7ff; }
-        .deduction-data-menu button.is-active { color: #2d5af5; font-weight: 600; }
+        .deduction-data-menu button.is-active { color: #2d5af5; font-weight: 600; background: #f0f4ff; }
+        /* 手动输入框：给可见的可编辑外观（无边框透明底时看起来与纯文本一样，像"没出现输入框"） */
+        input[type="number"].deduction-input.md-edit {
+            border: 1px solid #e2e6ee;
+            background: #fbfcfe;
+            border-radius: 4px;
+            padding: 2px 4px;
+        }
+        input[type="number"].deduction-input.md-edit:focus { background: #f0f7ff; border-color: #c9d4e8; }
         /* 工段质量扣款输入框 */
         input[type="number"].deduction-input {
             width: 100% !important;
@@ -2229,7 +2232,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.279</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.280</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -3001,14 +3004,11 @@
                             <div class="dept-deduction-section">
                                 <div class="section-title-row" style="margin-bottom:6px;">
                                     <span class="section-title" style="margin:0; font-size:12px;">工段质量扣款</span>
-                                    <span class="deduction-date-tag" style="margin-left:auto;">${ddMode === 'manual' ? '手动输入' : '自动汇总「外贸产量质量·工段质量扣款」每日明细'}</span>
-                                    <span class="deduction-data-wrap">
-                                        <button type="button" class="deduction-data-btn" onclick="toggleDeductionDataMenu(event)">数据 ▾</button>
-                                        <span class="deduction-data-menu" id="deduction-data-menu">
-                                            <button type="button" class="${ddMode === 'auto' ? 'is-active' : ''}" onclick="setDeductionMode('auto')">自动导入</button>
-                                            <button type="button" class="${ddMode === 'manual' ? 'is-active' : ''}" onclick="setDeductionMode('manual')">手动输入</button>
-                                        </span>
-                                    </span>
+                                    <button type="button" class="deduction-data-btn" onclick="toggleDeductionDataMenu(event)">数据：${ddMode === 'manual' ? '手动' : '自动'} ▾</button>
+                                </div>
+                                <div class="deduction-data-menu" id="deduction-data-menu">
+                                    <button type="button" class="${ddMode === 'auto' ? 'is-active' : ''}" onclick="setDeductionMode('auto')">自动导入（每日明细汇总）</button>
+                                    <button type="button" class="${ddMode === 'manual' ? 'is-active' : ''}" onclick="setDeductionMode('manual')">手动输入</button>
                                 </div>
                                 <table>
                                     <thead>
@@ -3018,7 +3018,7 @@
                                         <tr class="calc-row">
                                             <td>扣款</td>
                                             ${DEPT_NAMES.map((n, i2) => ddMode === 'manual'
-                                                ? `<td class="right"><input type="number" class="deduction-input" id="md-${n}" min="0" style="font-size:inherit;" value="${fmtNum((monthRecord.data.deptDeduction || {})[n] || 0)}" onchange="onMonthlyDeductionEdit('${n}')"></td>`
+                                                ? `<td class="right"><input type="number" class="deduction-input md-edit" id="md-${n}" min="0" style="font-size:inherit;" value="${fmtNum((monthRecord.data.deptDeduction || {})[n] || 0)}" onchange="onMonthlyDeductionEdit('${n}')"></td>`
                                                 : `<td class="right">${fmtNum(ddVals[i2])}</td>`).join('')}
                                         </tr>
                                         <tr class="calc-row" id="dept-deduction-ratio-row">
@@ -3525,12 +3525,7 @@
             if (e && e.stopPropagation) e.stopPropagation();
             const el = document.getElementById('deduction-data-menu');
             if (!el) return;
-            const open = !el.classList.contains('open');
-            el.classList.toggle('open', open);
-            if (open && !toggleDeductionDataMenu._bound) {
-                toggleDeductionDataMenu._bound = true;
-                document.addEventListener('click', closeDeductionDataMenu);
-            }
+            el.classList.toggle('open');
         }
         function closeDeductionDataMenu() {
             const el = document.getElementById('deduction-data-menu');
@@ -7436,7 +7431,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.279';
+        const APP_VERSION = 'v1.30.280';
 
         function forceRefresh() {
             if ('caches' in window) {
