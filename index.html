@@ -372,6 +372,64 @@
         input[type="number"].monthly-input:focus {
             background: #f0f7ff;
         }
+        /* 月度分析·阶段比较「总产量」手输框：外观与表格其它数字完全一致（居中 / 同字号 / 无边框） */
+        input.phase-total-input {
+            width: 100%;
+            border: none;
+            background: transparent;
+            padding: 0;
+            font-family: inherit;
+            font-size: inherit;
+            font-weight: inherit;
+            color: inherit;
+            text-align: center;
+            border-radius: 0;
+            outline: none;
+        }
+        input.phase-total-input:focus { background: #f0f7ff; }
+        /* 月度数据·工段质量扣款「数据」按钮（自动导入 / 手动输入 合二为一）+ 下拉菜单 */
+        .deduction-data-wrap { position: relative; display: inline-flex; }
+        .deduction-data-btn {
+            border: 1px solid #dce1ea;
+            background: #fff;
+            color: #4a5568;
+            font-size: 11px;
+            line-height: 16px;
+            padding: 1px 9px;
+            border-radius: 10px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .deduction-data-btn:hover { background: #f5f7fa; }
+        .deduction-data-menu {
+            display: none;
+            position: absolute;
+            right: 0;
+            top: 22px;
+            z-index: 200;
+            background: #fff;
+            border: 1px solid #e2e6ee;
+            border-radius: 8px;
+            box-shadow: 0 6px 18px rgba(0,0,0,.12);
+            padding: 4px;
+            min-width: 100px;
+        }
+        .deduction-data-menu.open { display: block; }
+        .deduction-data-menu button {
+            display: block;
+            width: 100%;
+            text-align: left;
+            border: none;
+            background: transparent;
+            font-size: 11px;
+            color: #333;
+            padding: 6px 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .deduction-data-menu button:hover { background: #f0f7ff; }
+        .deduction-data-menu button.is-active { color: #2d5af5; font-weight: 600; }
         /* 工段质量扣款输入框 */
         input[type="number"].deduction-input {
             width: 100% !important;
@@ -2171,7 +2229,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.277</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.278</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -2811,6 +2869,10 @@
             const calcDefect = (col) => (monthRecord.data['不良']?.[col] || 0) * getDefectPrice(monthRecord.name);
             const calcTotalDeduction = (col) => calcRepair(col) + calcDefect(col);
             const sumCols = (getter) => MONTHLY_COLS.reduce((sum, col) => sum + getter(col), 0);
+            // v1.30.278：工段质量扣款数据来源模式（默认 auto=自动导入每日明细汇总；manual=手动输入）
+            const ddMode = getDeductionMode(monthRecord);
+            const ddVals = monthlyDeductionValues(monthRecord);
+            const ddRatioTotal = ddVals.reduce((a, b) => a + b, 0);
 
             // 历史过去月（非 app 最新月）只显示可入库总产量，隐藏预估卡
             const now = new Date();
@@ -2939,7 +3001,14 @@
                             <div class="dept-deduction-section">
                                 <div class="section-title-row" style="margin-bottom:6px;">
                                     <span class="section-title" style="margin:0; font-size:12px;">工段质量扣款</span>
-                                    <span class="deduction-date-tag">自动汇总「外贸产量质量·工段质量扣款」每日明细</span>
+                                    <span class="deduction-date-tag" style="margin-left:auto;">${ddMode === 'manual' ? '手动输入' : '自动汇总「外贸产量质量·工段质量扣款」每日明细'}</span>
+                                    <span class="deduction-data-wrap">
+                                        <button type="button" class="deduction-data-btn" onclick="toggleDeductionDataMenu(event)">数据 ▾</button>
+                                        <span class="deduction-data-menu" id="deduction-data-menu">
+                                            <button type="button" class="${ddMode === 'auto' ? 'is-active' : ''}" onclick="setDeductionMode('auto')">自动导入</button>
+                                            <button type="button" class="${ddMode === 'manual' ? 'is-active' : ''}" onclick="setDeductionMode('manual')">手动输入</button>
+                                        </span>
+                                    </span>
                                 </div>
                                 <table>
                                     <thead>
@@ -2948,11 +3017,13 @@
                                     <tbody>
                                         <tr class="calc-row">
                                             <td>扣款</td>
-                                            ${monthlyDeductionValues(monthRecord).map(v => `<td class="right">${fmtNum(v)}</td>`).join('')}
+                                            ${DEPT_NAMES.map((n, i2) => ddMode === 'manual'
+                                                ? `<td class="right"><input type="number" class="deduction-input" id="md-${n}" min="0" style="font-size:inherit;" value="${fmtNum((monthRecord.data.deptDeduction || {})[n] || 0)}" onchange="onMonthlyDeductionEdit('${n}')"></td>`
+                                                : `<td class="right">${fmtNum(ddVals[i2])}</td>`).join('')}
                                         </tr>
                                         <tr class="calc-row" id="dept-deduction-ratio-row">
                                             <td>占比</td>
-                                            ${(() => { const vs = monthlyDeductionValues(monthRecord); const tt = vs.reduce((a, b) => a + b, 0); return vs.map(v => `<td class="right">${tt > 0 ? fmtPct(v / tt * 100) : '0.00%'}</td>`).join(''); })()}
+                                            ${ddVals.map((v, i2) => `<td class="right" id="md-ratio-${DEPT_NAMES[i2]}">${ddRatioTotal > 0 ? fmtPct(v / ddRatioTotal * 100) : '0.00%'}</td>`).join('')}
                                         </tr>
                                     </tbody>
                                 </table>
@@ -3421,18 +3492,24 @@
             arr.forEach(r => DEPT_NAMES.forEach(n => { total[n] += parseFloat(r.values && r.values[n]) || 0; }));
             return total;
         }
-        // 月度数据·工段质量扣款显示值：有每日明细 → 每日累计；无 → 旧手工月度值
+        // 工段质量扣款数据来源模式：'auto'（默认，自动导入每日明细汇总） / 'manual'（手动输入，不被每日明细覆盖）
+        function getDeductionMode(monthRecord) {
+            return (monthRecord && monthRecord.data && monthRecord.data.deductionMode) || 'auto';
+        }
+        // 月度数据·工段质量扣款显示值：手动模式 → 手填值；自动模式 → 有每日明细取每日累计，无则旧手工月度值
         function monthlyDeductionValues(monthRecord) {
-            const t = getDeductionDailyTotal(monthRecord.name);
             const legacy = (monthRecord.data && monthRecord.data.deptDeduction) || {};
+            if (getDeductionMode(monthRecord) === 'manual') return DEPT_NAMES.map(n => parseFloat(legacy[n]) || 0);
+            const t = getDeductionDailyTotal(monthRecord.name);
             return DEPT_NAMES.map(n => t ? (t[n] || 0) : (parseFloat(legacy[n]) || 0));
         }
-        // 把每日累计写回月度数据 deptDeduction（仅存在每日明细的月份覆盖，历史月手工值不动）
+        // 把每日累计写回月度数据 deptDeduction（仅存在每日明细的月份覆盖，历史月手工值不动；手动模式不覆盖）
         function syncDeductionToMonthly(monthName) {
             const total = getDeductionDailyTotal(monthName);
             if (!total) return false;
             const rec = findMonthlyRecord(monthName);
             if (!rec) return false;
+            if (getDeductionMode(rec) === 'manual') return false;
             if (!rec.data.deptDeduction) rec.data.deptDeduction = {};
             let changed = false;
             DEPT_NAMES.forEach(n => {
@@ -3442,6 +3519,56 @@
             });
             if (changed) saveMonthly();
             return changed;
+        }
+        // ===== 月度数据·工段质量扣款「数据」按钮（自动导入 / 手动输入 合二为一，默认自动导入） =====
+        function toggleDeductionDataMenu(e) {
+            if (e && e.stopPropagation) e.stopPropagation();
+            const el = document.getElementById('deduction-data-menu');
+            if (!el) return;
+            const open = !el.classList.contains('open');
+            el.classList.toggle('open', open);
+            if (open && !toggleDeductionDataMenu._bound) {
+                toggleDeductionDataMenu._bound = true;
+                document.addEventListener('click', closeDeductionDataMenu);
+            }
+        }
+        function closeDeductionDataMenu() {
+            const el = document.getElementById('deduction-data-menu');
+            if (el) el.classList.remove('open');
+        }
+        // 切换数据来源：auto=自动导入每日明细汇总值（默认） / manual=手动输入
+        function setDeductionMode(mode) {
+            const monthName = monthlyData.currentMonth;
+            const rec = findMonthlyRecord(monthName);
+            closeDeductionDataMenu();
+            if (!rec) return;
+            const m = (mode === 'manual') ? 'manual' : 'auto';
+            rec.data.deductionMode = m;
+            saveMonthly();
+            renderCurrentMonth(); // auto 模式会在此内自动导入每日明细汇总值
+            if (typeof showToast === 'function') {
+                if (m === 'manual') showToast('已切换为手动输入，可直接修改各工段扣款');
+                else showToast(getDeductionDailyTotal(monthName) ? '已自动导入每日明细汇总值' : '自动模式：该月暂无每日明细，沿用当前值');
+            }
+        }
+        // 手动模式下改某工段扣款：写回月度数据 deptDeduction + 即时重算占比（不整表重渲染，避免丢焦点）
+        function onMonthlyDeductionEdit(name) {
+            const monthName = monthlyData.currentMonth;
+            const rec = findMonthlyRecord(monthName);
+            if (!rec) return;
+            const el = document.getElementById('md-' + name);
+            if (!el) return;
+            const v = Math.max(0, parseFloat(el.value) || 0);
+            el.value = fmtNum(v);
+            if (!rec.data.deptDeduction) rec.data.deptDeduction = {};
+            rec.data.deptDeduction[name] = v;
+            saveMonthly();
+            const vals = DEPT_NAMES.map(n => parseFloat(rec.data.deptDeduction[n]) || 0);
+            const total = vals.reduce((a, b) => a + b, 0);
+            DEPT_NAMES.forEach((n, i) => {
+                const c = document.getElementById('md-ratio-' + n);
+                if (c) c.textContent = total > 0 ? fmtPct(vals[i] / total * 100) : '0.00%';
+            });
         }
         function renderDeductionDaily() {
             const box = document.getElementById('deduction-daily-body');
@@ -3458,7 +3585,7 @@
             recs.forEach(r => {
                 const dayTotal = DEPT_NAMES.reduce((s2, n) => s2 + (parseFloat(r.values && r.values[n]) || 0), 0);
                 h += `<tr><td rowspan="2">${r.date}日</td>`;
-                h += DEPT_NAMES.map(n => `<td class="right"><input type="number" class="deduction-input" min="0" value="${fmtNum((r.values && r.values[n]) || 0)}" onchange="onDeductionCellEdit('${r.id}','${n}')"></td>`).join('');
+                h += DEPT_NAMES.map(n => `<td class="right"><input type="number" class="deduction-input" id="dd-${r.id}-${n}" min="0" value="${fmtNum((r.values && r.values[n]) || 0)}" onchange="onDeductionCellEdit('${r.id}','${n}')"></td>`).join('');
                 h += `<td rowspan="2"><button class="btn-icon" onclick="deleteDeductionDay('${r.id}')" title="删除">🗑️</button></td></tr>`;
                 h += '<tr class="calc-row"><td style="color:#999;font-size:12px;">占比</td>';
                 h += DEPT_NAMES.map(n => {
@@ -6025,10 +6152,11 @@
                     defectRate: s.产量 > 0 ? s.不良 / s.产量 * 100 : 0
                 });
             });
-            let h = '<div class="table-scroll"><table class="analysis-table center"><thead><tr><th>阶段</th><th>外贸分拣量(方)</th><th>外贸可入库产量(方)</th><th>总产量(方)</th><th>外贸占比(%)</th><th>合格率(%)</th><th>修补率(%)</th><th>不良率(%)</th></tr></thead><tbody>';
+            let h = '<div class="table-scroll"><table class="analysis-table center"><thead><tr><th>阶段</th><th>总产量(方)</th><th>外贸分拣量(方)</th><th>外贸可入库产量(方)</th><th>外贸占比(%)</th><th>合格率(%)</th><th>修补率(%)</th><th>不良率(%)</th></tr></thead><tbody>';
             rows.forEach(r0 => {
-                h += `<tr><td>${r0.label}</td><td>${r0.sortQty === null ? '—' : fmtNum(r0.sortQty)}</td><td>${fmtNum(r0.warehouse)}</td>`
-                    + `<td class="right"><input type="number" class="deduction-input" min="0" style="width:90px; text-align:right;" id="phase-total-${r0.i}" data-wh="${r0.warehouse}" value="${fmtNum(r0.total)}" onchange="onPhaseTotalEdit(${r0.i})"></td>`
+                h += `<tr><td>${r0.label}</td>`
+                    + `<td><input type="text" inputmode="decimal" class="phase-total-input" id="phase-total-${r0.i}" data-wh="${r0.warehouse}" value="${fmtNum(r0.total)}" onfocus="this.select()" onkeydown="if(event.key==='Enter') this.blur()" onchange="onPhaseTotalEdit(${r0.i})"></td>`
+                    + `<td>${r0.sortQty === null ? '—' : fmtNum(r0.sortQty)}</td><td>${fmtNum(r0.warehouse)}</td>`
                     + `<td class="right" id="phase-ratio-${r0.i}">${r0.ratio === null ? '—' : fmtPct(r0.ratio)}</td>`
                     + `<td>${fmtPct(r0.qual)}</td><td>${fmtPct(r0.repairRate)}</td><td>${fmtPct(r0.defectRate)}</td></tr>`;
             });
@@ -6038,7 +6166,7 @@
             const tDRate = tSum.产量 > 0 ? tSum.不良 / tSum.产量 : 0;
             const tSort = (1 - tDRate) > 0 ? tWh / (1 - tDRate) : null;
             const tTotal = ['0', '1', '2'].reduce((s2, k) => s2 + (parseFloat(pt[k]) || 0), 0);
-            h += `<tr class="analysis-total"><td>合计(已录)</td><td>${tSort === null ? '—' : fmtNum(tSort)}</td><td>${fmtNum(tWh)}</td><td id="phase-total-sum">${fmtNum(tTotal)}</td><td id="phase-ratio-sum">${tTotal > 0 ? fmtPct(tWh / tTotal * 100) : '—'}</td><td>${fmtPct(tSum.产量 > 0 ? (tSum.产量 - tSum.不良 - tSum.修补) / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.修补 / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.不良 / tSum.产量 * 100 : 0)}</td></tr>`;
+            h += `<tr class="analysis-total"><td>合计(已录)</td><td id="phase-total-sum">${fmtNum(tTotal)}</td><td>${tSort === null ? '—' : fmtNum(tSort)}</td><td>${fmtNum(tWh)}</td><td id="phase-ratio-sum">${tTotal > 0 ? fmtPct(tWh / tTotal * 100) : '—'}</td><td>${fmtPct(tSum.产量 > 0 ? (tSum.产量 - tSum.不良 - tSum.修补) / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.修补 / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.不良 / tSum.产量 * 100 : 0)}</td></tr>`;
             h += '</tbody></table></div>';
             tEl.innerHTML = h;
         }
@@ -7308,7 +7436,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.277';
+        const APP_VERSION = 'v1.30.278';
 
         function forceRefresh() {
             if ('caches' in window) {
