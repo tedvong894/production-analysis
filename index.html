@@ -2234,14 +2234,14 @@
 
         <!-- 指标3：团队表现 · 扣款占比趋势（v1.30.285：数据=外贸产量质量·工段质量扣款每日明细；线=各工段每日占比，柱=当日扣款合计） -->
         <div class="analysis-card">
-            <div class="analysis-card-title"><span class="idx">3</span>团队表现 · 扣款占比趋势</div>
+            <div class="analysis-card-title"><span class="idx">3</span>团队表现 · 累计扣款占比趋势</div>
             <div id="manalysis-team-chart"></div>
         </div>
     </div>
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.285</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.286</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -6148,9 +6148,10 @@
 
         // ===== 指标3：团队表现 · 扣款占比趋势（v1.30.285） =====
         // 数据 = 「外贸产量质量」模块的工段质量扣款每日明细（yieldData.months[yk].deductions）。
-        // 表现方案：5 条折线 = 5 个工段每日扣款占比（该工段/当日合计，左轴 %）；柱 = 当日扣款合计（元，右轴）。
-        // 为什么加柱：占比只看"结构"、不看"力度"——当日合计很小时占比波动会被放大，柱高提示当天扣款总量，避免误读；
-        // 悬停 tooltip 对每个工段同时显示 占比(%) 与 绝对值(元)，两个维度都拿得到。
+        // 表现方案（v1.30.286 改口径）：5 条折线 = 5 个工段的**月内累计扣款占比**——
+        //   1号 = 1号当日占比，2号 = 截止2号的累计占比（工段 1..N 日累计扣款 ÷ 1..N 日累计总扣款），以此类推。
+        //   累计口径天然平滑，不再受单日波动干扰（用户反馈"每日占比变化太大"）。
+        // 柱 = 当日扣款合计（元，右轴），保留"当天力度"维度；tooltip 每工段同显 累计占比(%) 与 累计扣款(元)。
         function renderTeamDeductionTrend() {
             const el = document.getElementById('manalysis-team-chart');
             if (!el) return;
@@ -6178,14 +6179,20 @@
             });
             const days = Object.keys(byDay).map(Number).sort((a, b) => a - b);
             const pctByDept = {}, absByDept = {}, dayTotals = [];
-            DEPT_NAMES.forEach(n => { pctByDept[n] = []; absByDept[n] = []; });
+            const cumByDept = {};
+            let cumTotal = 0;   // 截至当日的全团队累计扣款
+            DEPT_NAMES.forEach(n => { pctByDept[n] = []; absByDept[n] = []; cumByDept[n] = 0; });
             days.forEach(d => {
                 const v = byDay[d];
-                const dayTotal = DEPT_NAMES.reduce((s2, n) => s2 + (v[n] || 0), 0);
-                dayTotals.push(Math.round(dayTotal * 10) / 10);
+                let dayTotal = 0;
+                DEPT_NAMES.forEach(n => { dayTotal += (v[n] || 0); });
+                dayTotals.push(Math.round(dayTotal * 10) / 10);   // 柱仍是「当日」扣款合计
+                cumTotal += dayTotal;
                 DEPT_NAMES.forEach(n => {
-                    absByDept[n].push(Math.round((v[n] || 0) * 10) / 10);
-                    pctByDept[n].push(dayTotal > 0 ? Math.round((v[n] || 0) / dayTotal * 10000) / 100 : null);
+                    cumByDept[n] += (v[n] || 0);
+                    // 累计口径：截止该日，工段累计扣款 ÷ 全团队累计扣款
+                    absByDept[n].push(Math.round(cumByDept[n] * 10) / 10);
+                    pctByDept[n].push(cumTotal > 0 ? Math.round(cumByDept[n] / cumTotal * 10000) / 100 : null);
                 });
             });
             el.innerHTML = '<div class="analysis-chart-wrap"><canvas id="manalysis-team-canvas"></canvas></div>';
@@ -6196,7 +6203,7 @@
             ];
             DEPT_NAMES.forEach(n => {
                 datasets.push({
-                    type: 'line', label: n + '占比', data: pctByDept[n],
+                    type: 'line', label: n + '累计占比', data: pctByDept[n],
                     borderColor: ANALYSIS_COLORS.depts[n], backgroundColor: ANALYSIS_COLORS.depts[n],
                     borderWidth: 2.5, pointRadius: 3.5, pointHoverRadius: 5.5,
                     fill: false, tension: 0.1, yAxisID: 'y', order: 1, spanGaps: true
@@ -6215,9 +6222,9 @@
                             callbacks: {
                                 label: function (ctx) {
                                     if (ctx.dataset.type === 'bar') return ' 当日扣款合计: ' + fmtNum(ctx.parsed.y) + ' 元';
-                                    const n = (ctx.dataset.label || '').replace('占比', '');
+                                    const n = (ctx.dataset.label || '').replace('累计占比', '');   // v1.30.286：折线名带「累计」，先整段剥掉再反查工段名
                                     const abs = (absByDept[n] || [])[ctx.dataIndex];
-                                    return ' ' + n + ': ' + fmtPct(ctx.parsed.y) + '（' + fmtNum(abs) + ' 元）';
+                                    return ' ' + n + ' 累计占比: ' + fmtPct(ctx.parsed.y) + '（累计 ' + fmtNum(abs) + ' 元）';
                                 }
                             }
                         }
@@ -6227,7 +6234,7 @@
                         y: {
                             type: 'linear',
                             position: 'left',
-                            title: { display: true, text: '扣款占比(%)', font: { size: 11 } },
+                            title: { display: true, text: '累计扣款占比(%)', font: { size: 11 } },
                             beginAtZero: true,
                             suggestedMax: 100
                         },
@@ -7567,7 +7574,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.285';
+        const APP_VERSION = 'v1.30.286';
 
         function forceRefresh() {
             if ('caches' in window) {
