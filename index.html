@@ -2232,16 +2232,16 @@
             <div id="manalysis-phase-table"></div>
         </div>
 
-        <!-- 指标3：团队表现（预留：工段质量扣款目前按整月汇总，待支持按旬录入后开放） -->
+        <!-- 指标3：团队表现 · 扣款占比趋势（v1.30.285：数据=外贸产量质量·工段质量扣款每日明细；线=各工段每日占比，柱=当日扣款合计） -->
         <div class="analysis-card">
-            <div class="analysis-card-title"><span class="idx">3</span>团队表现</div>
-            <div id="manalysis-team-table"><div class="analysis-empty">工段质量扣款目前按整月汇总，暂无按旬（上旬/中旬/下旬）数据，待支持后开放。</div></div>
+            <div class="analysis-card-title"><span class="idx">3</span>团队表现 · 扣款占比趋势</div>
+            <div id="manalysis-team-chart"></div>
         </div>
     </div>
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.284</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.285</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -6142,7 +6142,105 @@
 
             // ===== 指标2：阶段比较（v1.30.277 起独立函数，含 总产量(手输)/外贸占比(自动) 列） =====
             renderPhaseComparison();
-            // 指标3 团队表现：预留占位（HTML 静态提示），待「月度数据」支持按旬扣款录入后开放
+            // 指标3：团队扣款占比趋势（v1.30.285）
+            renderTeamDeductionTrend();
+        }
+
+        // ===== 指标3：团队表现 · 扣款占比趋势（v1.30.285） =====
+        // 数据 = 「外贸产量质量」模块的工段质量扣款每日明细（yieldData.months[yk].deductions）。
+        // 表现方案：5 条折线 = 5 个工段每日扣款占比（该工段/当日合计，左轴 %）；柱 = 当日扣款合计（元，右轴）。
+        // 为什么加柱：占比只看"结构"、不看"力度"——当日合计很小时占比波动会被放大，柱高提示当天扣款总量，避免误读；
+        // 悬停 tooltip 对每个工段同时显示 占比(%) 与 绝对值(元)，两个维度都拿得到。
+        function renderTeamDeductionTrend() {
+            const el = document.getElementById('manalysis-team-chart');
+            if (!el) return;
+            disposeAnalysisChart('manalysisTeam');
+            const monthName = getLatestMonth();
+            if (!monthName) {
+                el.innerHTML = '<div class="analysis-empty">暂无月份数据。</div>';
+                return;
+            }
+            const yk = findYieldMonthKey(monthName);
+            const dedRecs = ((yk && yieldData.months[yk] && yieldData.months[yk].deductions) || []);
+            if (dedRecs.length === 0) {
+                el.innerHTML = '<div class="analysis-empty">「' + monthName + '」暂无工段质量扣款每日明细，请先到「外贸产量质量」模块录入。</div>';
+                return;
+            }
+            // 按日聚合（同日多条时合并，兼容旧数据）
+            const byDay = {};
+            dedRecs.forEach(r => {
+                const d = parseInt(r.date, 10) || 0;
+                if (d <= 0) return;
+                if (!byDay[d]) byDay[d] = {};
+                DEPT_NAMES.forEach(n => {
+                    byDay[d][n] = (byDay[d][n] || 0) + (parseFloat(r.values && r.values[n]) || 0);
+                });
+            });
+            const days = Object.keys(byDay).map(Number).sort((a, b) => a - b);
+            const pctByDept = {}, absByDept = {}, dayTotals = [];
+            DEPT_NAMES.forEach(n => { pctByDept[n] = []; absByDept[n] = []; });
+            days.forEach(d => {
+                const v = byDay[d];
+                const dayTotal = DEPT_NAMES.reduce((s2, n) => s2 + (v[n] || 0), 0);
+                dayTotals.push(Math.round(dayTotal * 10) / 10);
+                DEPT_NAMES.forEach(n => {
+                    absByDept[n].push(Math.round((v[n] || 0) * 10) / 10);
+                    pctByDept[n].push(dayTotal > 0 ? Math.round((v[n] || 0) / dayTotal * 10000) / 100 : null);
+                });
+            });
+            el.innerHTML = '<div class="analysis-chart-wrap"><canvas id="manalysis-team-canvas"></canvas></div>';
+            const cv = document.getElementById('manalysis-team-canvas');
+            if (!cv) return;
+            const datasets = [
+                { type: 'bar', label: '当日扣款合计(元)', data: dayTotals, backgroundColor: '#c9d4e8', yAxisID: 'y1', order: 3, barPercentage: 0.5, categoryPercentage: 0.7, maxBarThickness: 26, borderRadius: 3 }
+            ];
+            DEPT_NAMES.forEach(n => {
+                datasets.push({
+                    type: 'line', label: n + '占比', data: pctByDept[n],
+                    borderColor: ANALYSIS_COLORS.depts[n], backgroundColor: ANALYSIS_COLORS.depts[n],
+                    borderWidth: 2.5, pointRadius: 3.5, pointHoverRadius: 5.5,
+                    fill: false, tension: 0.1, yAxisID: 'y', order: 1, spanGaps: true
+                });
+            });
+            _analysisCharts['manalysisTeam'] = new Chart(cv, {
+                type: 'bar',
+                data: { labels: days.map(d => d + '日'), datasets: datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } },
+                        tooltip: {
+                            callbacks: {
+                                label: function (ctx) {
+                                    if (ctx.dataset.type === 'bar') return ' 当日扣款合计: ' + fmtNum(ctx.parsed.y) + ' 元';
+                                    const n = (ctx.dataset.label || '').replace('占比', '');
+                                    const abs = (absByDept[n] || [])[ctx.dataIndex];
+                                    return ' ' + n + ': ' + fmtPct(ctx.parsed.y) + '（' + fmtNum(abs) + ' 元）';
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: { grid: { display: false } },
+                        y: {
+                            type: 'linear',
+                            position: 'left',
+                            title: { display: true, text: '扣款占比(%)', font: { size: 11 } },
+                            beginAtZero: true,
+                            suggestedMax: 100
+                        },
+                        y1: {
+                            type: 'linear',
+                            position: 'right',
+                            title: { display: true, text: '当日扣款合计(元)', font: { size: 11 } },
+                            beginAtZero: true,
+                            grid: { drawOnChartArea: false }
+                        }
+                    }
+                }
+            });
         }
 
         // ===== 指标2：阶段比较（行=上旬/中旬/下旬，仅显示已有数据的阶段） =====
@@ -7469,7 +7567,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.284';
+        const APP_VERSION = 'v1.30.285';
 
         function forceRefresh() {
             if ('caches' in window) {
