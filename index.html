@@ -33,6 +33,87 @@
         .header h1 { font-size: 18px; color: #1a1a2e; font-weight: 700; }
         .header p { color: #999; font-size: 12px; margin-top: 2px; }
 
+        /* ===== 登录门禁（v1.30.287）===== */
+        body.auth-locked > *:not(#auth-gate) { display: none !important; }
+        .auth-user {
+            position: absolute;
+            right: 12px;
+            top: calc(14px + env(safe-area-inset-top));
+            display: none;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            line-height: 1;
+        }
+        .auth-user .auth-email {
+            color: #b0b4bb;
+            max-width: 120px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .auth-user .auth-logout { color: #7a94b8; cursor: pointer; }
+        .auth-user .auth-logout:active { opacity: .6; }
+        #auth-gate {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: #f7f8fa;
+            z-index: 5000;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        #auth-gate.active { display: flex; }
+        .auth-card {
+            background: #fff;
+            border: 1px solid #eee;
+            border-radius: 16px;
+            box-shadow: 0 8px 30px rgba(0,0,0,.06);
+            width: 100%;
+            max-width: 330px;
+            padding: 26px 22px 20px;
+            box-sizing: border-box;
+        }
+        .auth-card h2 { font-size: 17px; font-weight: 700; color: #1a1a2e; text-align: center; }
+        .auth-card .auth-sub {
+            font-size: 12px;
+            color: #9a9ea6;
+            text-align: center;
+            margin: 7px 0 20px;
+            line-height: 1.7;
+            white-space: pre-line;
+        }
+        .auth-field { margin-bottom: 12px; }
+        .auth-field label { display: block; font-size: 12px; color: #8a8e96; margin-bottom: 5px; }
+        .auth-field input {
+            width: 100%;
+            padding: 10px 12px;
+            font-size: 14px;
+            color: #222;
+            background: #fbfbfc;
+            border: 1px solid #e3e5e9;
+            border-radius: 9px;
+            outline: none;
+            box-sizing: border-box;
+            -webkit-appearance: none;
+        }
+        .auth-field input:focus { border-color: #7a94b8; background: #fff; }
+        .auth-btn {
+            width: 100%;
+            margin-top: 6px;
+            padding: 11px;
+            font-size: 14px;
+            color: #fff;
+            background: #7a94b8;
+            border: none;
+            border-radius: 9px;
+            cursor: pointer;
+        }
+        .auth-btn:active { opacity: .85; }
+        .auth-err { min-height: 16px; margin-top: 10px; font-size: 12px; color: #c0392b; text-align: center; }
+        .auth-link { margin-top: 12px; font-size: 12px; color: #7a94b8; text-align: center; cursor: pointer; }
+
         /* 底部导航 */
         .tab-bar {
             position: fixed;
@@ -1235,9 +1316,39 @@
     </style>
 </head>
 <body data-page-node-id="fHYynpZhCXRjfEB00ExEHR">
+    <!-- 登录门禁（v1.30.287）：未登录不渲染任何业务数据 -->
+    <div id="auth-gate">
+        <div class="auth-card">
+            <h2 id="auth-title">生产经营分析系统</h2>
+            <div class="auth-sub" id="auth-sub">请输入邮箱与密码登录</div>
+            <div class="auth-field">
+                <label>邮箱</label>
+                <input type="email" id="auth-email-input" autocomplete="username" placeholder="you@example.com"
+                       onkeydown="if(event.key==='Enter')submitAuth()">
+            </div>
+            <div class="auth-field">
+                <label>密码</label>
+                <input type="password" id="auth-pwd-input" autocomplete="current-password" placeholder="请输入密码"
+                       onkeydown="if(event.key==='Enter')submitAuth()">
+            </div>
+            <div class="auth-field" id="auth-pwd2-field" style="display:none;">
+                <label>确认密码</label>
+                <input type="password" id="auth-pwd2-input" autocomplete="new-password" placeholder="请再次输入密码"
+                       onkeydown="if(event.key==='Enter')submitAuth()">
+            </div>
+            <button class="auth-btn" id="auth-submit" onclick="submitAuth()">登录</button>
+            <div class="auth-err" id="auth-err"></div>
+            <div class="auth-link" id="auth-switch" onclick="switchAuthMode()"></div>
+        </div>
+    </div>
+
     <div class="header" data-page-node-id="V1dCJVe8T7rMyqAP829KqH">
         <h1 data-page-node-id="fmhNgqHMHBVOqwrWqXDCMB">生产经营分析系统</h1>
         <p id="page-subtitle" data-page-node-id="edlWYBtpP6nDaUfJ0mMShR">经营驾驶舱</p>
+        <div class="auth-user" id="auth-user">
+            <span class="auth-email" id="auth-user-email"></span>
+            <span class="auth-logout" onclick="doLogout()">退出</span>
+        </div>
     </div>
 
     <!-- 基础设置页（岗位工资 + 参数设置） -->
@@ -2241,7 +2352,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.286</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.287</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -7574,7 +7685,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.286';
+        const APP_VERSION = 'v1.30.287';
 
         function forceRefresh() {
             if ('caches' in window) {
@@ -8593,41 +8704,195 @@
             document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && _dirty) pushState(); });
         }
 
-        // ============ 启动 ============
-        initData();
-        initParams();
-        bindParamAutoSave();
-        initMonthly();
-        // 启动时将基础设置参数/岗位编制同步为当前月份的有效值
-        if (monthlyData && monthlyData.currentMonth) loadMonthParams(monthlyData.currentMonth);
-        if (monthlyData && monthlyData.currentMonth) loadMonthPositions(monthlyData.currentMonth);
-        initYield();
-        initYieldDetailCollapse();
-        initOrders();
-        // 数据自愈：把月份统一归为「年+月」长格式（2026年9月），再进入联动初始化
-        normalizeMonthlyMonths();
-        // 同步迁移「分析月份 / 经营成果本表月份」选择数组里的短名为长名，避免重命名后相关表失配
-        migrateMonthSelections();
-        // v1.30.242 一次性迁移：「经营成果」表的月份自本版本起由「本表月份」独立控制，
-        // 故把历史上可能被筛窄的模块级「分析月份」恢复为「全部月份」，让该模块其它表格重新显示全部月份（仅执行一次）。
-        try {
-            if (!localStorage.getItem('mig_v130242_analysis_filter_reset')) {
-                localStorage.removeItem('analysis_selected_months');
-                localStorage.setItem('mig_v130242_analysis_filter_reset', '1');
+        // ============ 登录门禁（v1.30.287）============
+        // 纯本地门禁、无后端：首次使用创建账号（邮箱 + 加盐哈希密码，仅存本机）；
+        // 登录成功写入 localStorage 会话标记 → 不手动退出就一直保持登录；
+        // 「退出」清除本机会话与业务数据，避免在他人设备登录后残留信息（云端数据不动，下次登录自动拉回）。
+        const AUTH_ACCOUNT_KEY = 'pa_auth_account';
+        const AUTH_SESSION_KEY = 'pa_auth_session';
+        // 退出登录时清除的本机数据/界面状态键（同步配置、版本号、迁移标记保留）
+        const AUTH_WIPE_KEYS = [
+            STORAGE_KEY, PARAMS_KEY, MONTHLY_KEY, YIELD_KEY, TF_KEY, ORDER_KEY,
+            'analysis_selected_months', 'analysis_profit_selected_months',
+            'deduction_daily_collapsed', 'yield_detail_collapsed',
+            'order_detail_collapsed', 'salary_section_collapsed'
+        ];
+        let _authMode = 'login';
+        let _booted = false;
+
+        function _authEl(id) { return document.getElementById(id); }
+
+        function _authAccount() {
+            try { return JSON.parse(localStorage.getItem(AUTH_ACCOUNT_KEY) || 'null'); } catch (e) { return null; }
+        }
+
+        function isAuthed() {
+            try {
+                const sess = JSON.parse(localStorage.getItem(AUTH_SESSION_KEY) || 'null');
+                const acct = _authAccount();
+                return !!(sess && acct && sess.email && sess.email === acct.email);
+            } catch (e) { return false; }
+        }
+
+        // 密码加盐哈希：优先 SubtleCrypto(SHA-256)；非安全上下文降级为双通道 FNV-1a
+        function _hashPwd(pwd, salt) {
+            const str = salt + '::' + pwd;
+            if (window.crypto && crypto.subtle && crypto.subtle.digest && window.TextEncoder) {
+                return crypto.subtle.digest('SHA-256', new TextEncoder().encode(str)).then(buf =>
+                    Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('')
+                );
             }
-        } catch (e) {}
-        initSalarySectionCollapse();
-        // Bug1/Bug2：初始化联动状态——appMonth 与驾驶舱视图月同步，时间系数输入框回填当前月值
-        window.appMonth = toLongMonthKey(monthlyData.currentMonth || '');
-        window.cockpitSelectedMonth = window.cockpitSelectedMonth || monthlyData.currentMonth || '';
-        syncTimeFactorInputs();
-        renderSalary();
-        // 默认首页为经营驾驶舱，启动时同步渲染驾驶舱数据
-        renderCockpit();
-        syncMonthSelectors();
-        checkVersion();
-        // 联网同步：安装写钩子并按配置拉起（云端为权威 + 本地编辑即推送）
-        initSync();
+            let h1 = 0x811c9dc5, h2 = 0x9e3779b9;
+            for (let i = 0; i < str.length; i++) {
+                h1 ^= str.charCodeAt(i); h1 = Math.imul(h1, 16777619) >>> 0;
+                h2 = Math.imul(h2 ^ str.charCodeAt(i), 2654435761) >>> 0;
+            }
+            return Promise.resolve(h1.toString(16) + h2.toString(16));
+        }
+
+        function renderAuthMode() {
+            const isReg = _authMode === 'register';
+            const title = _authEl('auth-title'), sub = _authEl('auth-sub'), btn = _authEl('auth-submit');
+            const p2 = _authEl('auth-pwd2-field'), sw = _authEl('auth-switch'), pwd = _authEl('auth-pwd-input');
+            if (title) title.textContent = isReg ? '创建账号' : '生产经营分析系统';
+            if (sub) sub.textContent = isReg
+                ? '首次使用，请设置邮箱与密码\n（仅保存在本机，用于锁定本应用）'
+                : '请输入邮箱与密码登录';
+            if (btn) btn.textContent = isReg ? '创建并登录' : '登录';
+            if (p2) p2.style.display = isReg ? 'block' : 'none';
+            if (pwd) pwd.setAttribute('autocomplete', isReg ? 'new-password' : 'current-password');
+            if (sw) sw.textContent = isReg ? '' : '忘记密码？重置账号';
+        }
+
+        function showAuthGate() {
+            _authMode = _authAccount() ? 'login' : 'register';
+            document.body.classList.add('auth-locked');
+            const gate = _authEl('auth-gate');
+            if (gate) gate.classList.add('active');
+            const chip = _authEl('auth-user');
+            if (chip) chip.style.display = 'none';
+            const err = _authEl('auth-err');
+            if (err) err.textContent = '';
+            renderAuthMode();
+            setTimeout(function () { const el = _authEl('auth-email-input'); if (el) el.focus(); }, 80);
+        }
+
+        function switchAuthMode() {
+            if (!_authAccount()) return;
+            if (!confirm('重置账号会清除本机全部数据；云端数据不受影响，重新创建账号登录后会自动拉回。\n\n确定重置？')) return;
+            try {
+                AUTH_WIPE_KEYS.forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
+                localStorage.removeItem(AUTH_ACCOUNT_KEY);
+                localStorage.removeItem(AUTH_SESSION_KEY);
+            } catch (e) {}
+            location.reload();
+        }
+
+        function submitAuth() {
+            const err = _authEl('auth-err');
+            const eIn = _authEl('auth-email-input'), pIn = _authEl('auth-pwd-input');
+            const email = ((eIn && eIn.value) || '').trim().toLowerCase();
+            const pwd = (pIn && pIn.value) || '';
+            if (err) err.textContent = '';
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { if (err) err.textContent = '请输入正确的邮箱地址'; return; }
+            if (pwd.length < 4) { if (err) err.textContent = '密码至少 4 位'; return; }
+            const acct = _authAccount();
+            if (_authMode === 'register' || !acct) {
+                const p2In = _authEl('auth-pwd2-input');
+                if (pwd !== ((p2In && p2In.value) || '')) { if (err) err.textContent = '两次输入的密码不一致'; return; }
+                const salt = Math.random().toString(36).slice(2) + Date.now().toString(36);
+                _hashPwd(pwd, salt).then(function (hash) {
+                    try {
+                        localStorage.setItem(AUTH_ACCOUNT_KEY, JSON.stringify({ email: email, salt: salt, hash: hash, createdAt: new Date().toISOString() }));
+                        localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify({ email: email, ts: Date.now() }));
+                    } catch (e) {}
+                    _afterAuthSuccess();
+                });
+            } else {
+                _hashPwd(pwd, acct.salt).then(function (hash) {
+                    if (hash !== acct.hash) {
+                        if (err) err.textContent = '密码不正确';
+                        if (pIn) { pIn.value = ''; pIn.focus(); }
+                        return;
+                    }
+                    try { localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify({ email: acct.email, ts: Date.now() })); } catch (e) {}
+                    _afterAuthSuccess();
+                });
+            }
+        }
+
+        function _afterAuthSuccess() {
+            document.body.classList.remove('auth-locked');
+            const gate = _authEl('auth-gate');
+            if (gate) gate.classList.remove('active');
+            const acct = _authAccount();
+            const chip = _authEl('auth-user'), mail = _authEl('auth-user-email');
+            if (chip && acct) {
+                chip.style.display = 'flex';
+                if (mail) mail.textContent = acct.email;
+            }
+            if (!_booted) { _booted = true; bootApp(); }
+            else if (typeof syncNow === 'function') { try { syncNow(false); } catch (e) {} }
+        }
+
+        function doLogout() {
+            if (!confirm('退出登录会清除本机数据并锁定应用。\n云端数据不受影响，下次登录会自动恢复。\n\n确定退出？')) return;
+            const finish = function () {
+                try {
+                    localStorage.removeItem(AUTH_SESSION_KEY);
+                    AUTH_WIPE_KEYS.forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
+                } catch (e) {}
+                location.reload();
+            };
+            try {
+                // 退登前尽力把未上云的改动推一次，避免丢数据（最多等 2.5 秒）
+                if (_dirty && typeof pushState === 'function') {
+                    Promise.race([pushState(), new Promise(r => setTimeout(r, 2500))]).then(finish, finish);
+                } else { finish(); }
+            } catch (e) { finish(); }
+        }
+
+        // ============ 启动 ============
+        // v1.30.287：启动序列收敛到 bootApp()，由登录门禁决定何时执行（未登录不渲染业务数据）
+        function bootApp() {
+            initData();
+            initParams();
+            bindParamAutoSave();
+            initMonthly();
+            // 启动时将基础设置参数/岗位编制同步为当前月份的有效值
+            if (monthlyData && monthlyData.currentMonth) loadMonthParams(monthlyData.currentMonth);
+            if (monthlyData && monthlyData.currentMonth) loadMonthPositions(monthlyData.currentMonth);
+            initYield();
+            initYieldDetailCollapse();
+            initOrders();
+            // 数据自愈：把月份统一归为「年+月」长格式（2026年9月），再进入联动初始化
+            normalizeMonthlyMonths();
+            // 同步迁移「分析月份 / 经营成果本表月份」选择数组里的短名为长名，避免重命名后相关表失配
+            migrateMonthSelections();
+            // v1.30.242 一次性迁移：「经营成果」表的月份自本版本起由「本表月份」独立控制，
+            // 故把历史上可能被筛窄的模块级「分析月份」恢复为「全部月份」，让该模块其它表格重新显示全部月份（仅执行一次）。
+            try {
+                if (!localStorage.getItem('mig_v130242_analysis_filter_reset')) {
+                    localStorage.removeItem('analysis_selected_months');
+                    localStorage.setItem('mig_v130242_analysis_filter_reset', '1');
+                }
+            } catch (e) {}
+            initSalarySectionCollapse();
+            // Bug1/Bug2：初始化联动状态——appMonth 与驾驶舱视图月同步，时间系数输入框回填当前月值
+            window.appMonth = toLongMonthKey(monthlyData.currentMonth || '');
+            window.cockpitSelectedMonth = window.cockpitSelectedMonth || monthlyData.currentMonth || '';
+            syncTimeFactorInputs();
+            renderSalary();
+            // 默认首页为经营驾驶舱，启动时同步渲染驾驶舱数据
+            renderCockpit();
+            syncMonthSelectors();
+            checkVersion();
+            // 联网同步：安装写钩子并按配置拉起（云端为权威 + 本地编辑即推送）
+            initSync();
+        }
+
+        // 登录门禁：已登录直接进入；未登录只显示登录界面（不渲染任何数据）
+        if (isAuthed()) { _afterAuthSuccess(); } else { showAuthGate(); }
     </script>
 </body>
 </html>
