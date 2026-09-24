@@ -2346,7 +2346,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.289</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.290</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -7679,7 +7679,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.289';
+        const APP_VERSION = 'v1.30.290';
 
         function forceRefresh() {
             if ('caches' in window) {
@@ -8798,6 +8798,10 @@
         const ALLOWED_SALT = 'uph7gthq5tpmuf61bdl';
         const ALLOWED_HASH = '210d4bfbfd83cc4d4b8d313fefb0f5c6e746a2903a963a10736c7952c3d1a36c';
         const AUTH_SESSION_KEY = 'pa_auth_session';
+        // 会话签名：只有在本版「密码校验通过」之后写入的会话才允许自动登录。
+        //   ⇒ v1.30.288 及更早的会话（那时候允许随便注册）一律作废，必须重新登录一次，
+        //     否则别人当年用 tedvong@126.com 随便注册的老会话能免密进门。
+        const AUTH_VER = ALLOWED_HASH.slice(0, 12);
         // 本次登录是否已证明「本人」：内置校验值通过 或 云端数据能被该密码派生的密钥解开。
         // 两种路径强度等价（都要有正确的唯一密码），都允许从老公开 board 搬数据；否则一律不搬。
         let _ownerOk = false;
@@ -8815,10 +8819,14 @@
         function isAuthed() {
             try {
                 const sess = JSON.parse(localStorage.getItem(AUTH_SESSION_KEY) || 'null');
-                // 必须同时满足：唯一固定邮箱 + 私有标识（老会话没有私有标识的，一律要求重新登录一次）
-                return !!(sess && sess.email === ALLOWED_EMAIL && sess.board);
+                // 三件齐全才算已登录：唯一固定邮箱 + 私有标识 + 本版会话签名
+                // （老会话没有签名/私有标识的，一律要求重新登录一次）
+                return !!(sess && sess.email === ALLOWED_EMAIL && sess.board && sess.ver === AUTH_VER);
             } catch (e) { return false; }
         }
+        // 带签名的会话 = 本机已用正确密码登录过 → 同样算「已证明本人」，
+        // 允许补做搬迁（否则离线中断过一次后，老公开 board 会一直没被清掉）
+        try { _ownerOk = isAuthed(); } catch (e) {}
 
         // 密码加盐哈希：优先 SubtleCrypto(SHA-256)；非安全上下文降级为双通道 FNV-1a
         function _hashPwd(pwd, salt) {
@@ -8853,7 +8861,7 @@
         function _setSession(email, board, keyHex) {
             try {
                 localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify({
-                    email: email, ts: Date.now(), board: board || '', key: keyHex || ''
+                    email: email, ts: Date.now(), board: board || '', key: keyHex || '', ver: AUTH_VER
                 }));
             } catch (e) {}
         }
