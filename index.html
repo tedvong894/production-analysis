@@ -1316,29 +1316,23 @@
     </style>
 </head>
 <body data-page-node-id="fHYynpZhCXRjfEB00ExEHR">
-    <!-- 登录门禁（v1.30.287）：未登录不渲染任何业务数据 -->
+    <!-- 登录门禁（v1.30.289）：全应用仅限唯一固定账号，未登录不渲染任何业务数据 -->
     <div id="auth-gate">
         <div class="auth-card">
             <h2 id="auth-title">生产经营分析系统</h2>
-            <div class="auth-sub" id="auth-sub">请输入邮箱与密码登录</div>
+            <div class="auth-sub" id="auth-sub">本应用仅限固定账号使用</div>
             <div class="auth-field">
                 <label>邮箱</label>
-                <input type="email" id="auth-email-input" autocomplete="username" placeholder="you@example.com"
-                       onkeydown="if(event.key==='Enter')submitAuth()">
+                <input type="email" id="auth-email-input" value="tedvong@126.com" readonly
+                       style="background:#f5f6f8; color:#666;">
             </div>
             <div class="auth-field">
                 <label>密码</label>
                 <input type="password" id="auth-pwd-input" autocomplete="current-password" placeholder="请输入密码"
                        onkeydown="if(event.key==='Enter')submitAuth()">
             </div>
-            <div class="auth-field" id="auth-pwd2-field" style="display:none;">
-                <label>确认密码</label>
-                <input type="password" id="auth-pwd2-input" autocomplete="new-password" placeholder="请再次输入密码"
-                       onkeydown="if(event.key==='Enter')submitAuth()">
-            </div>
             <button class="auth-btn" id="auth-submit" onclick="submitAuth()">登录</button>
             <div class="auth-err" id="auth-err"></div>
-            <div class="auth-link" id="auth-switch" onclick="switchAuthMode()"></div>
         </div>
     </div>
 
@@ -2352,7 +2346,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.288</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.289</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -7685,7 +7679,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.288';
+        const APP_VERSION = 'v1.30.289';
 
         function forceRefresh() {
             if ('caches' in window) {
@@ -8478,8 +8472,8 @@
             for (let i = 0; i < str.length; i++) out[i] = str.charCodeAt(i);
             return out;
         }
-        async function getSyncEncKey() {
-            const hex = getSyncKeyHex();
+        async function getSyncEncKey(hexOverride) {
+            const hex = hexOverride || getSyncKeyHex();
             if (!hex) return null;
             if (!(window.crypto && crypto.subtle && crypto.subtle.importKey) || !window.TextEncoder) return null;
             if (_encKeyCache.key && _encKeyCache.hex === hex) return _encKeyCache.key;
@@ -8487,22 +8481,22 @@
             _encKeyCache = { hex: hex, key: key };
             return key;
         }
-        async function encryptPayload(obj) {
-            const key = await getSyncEncKey();
+        async function encryptPayload(obj, keyHex) {
+            const key = await getSyncEncKey(keyHex);
             if (!key) return obj;   // 仅非安全上下文（拿不到 SubtleCrypto）才退回明文
             const iv = crypto.getRandomValues(new Uint8Array(12));
             const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, key, new TextEncoder().encode(JSON.stringify(obj)));
             return { __enc: 1, v: 1, iv: _bytesToB64(iv), ct: _bytesToB64(ct) };
         }
-        async function decryptPayload(stored) {
+        async function decryptPayload(stored, keyHex) {
             if (!stored || typeof stored !== 'object' || !stored.__enc) return stored;  // 旧版明文照常读（搬迁期）
-            const key = await getSyncEncKey();
+            const key = await getSyncEncKey(keyHex);
             if (!key) throw new Error('缺少解密密钥');   // 绝不返回空对象 → 不会误覆盖本机数据
             const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: _b64ToBytes(stored.iv) }, key, _b64ToBytes(stored.ct));
             return JSON.parse(new TextDecoder().decode(pt));
         }
 
-        async function sbPullBoard(board) {
+        async function sbPullBoard(board, keyHex) {
             if (!SYNC.url || !SYNC.anon || !board) throw new Error('未配置');
             const base = SYNC.url.replace(/\/+$/, '');
             const table = SYNC.table || 'workbench_state';
@@ -8512,14 +8506,14 @@
             const arr = await r.json();
             const row = (Array.isArray(arr) && arr.length) ? arr[0] : null;
             if (!row) return null;
-            return { data: await decryptPayload(row.data), updated_at: row.updated_at };
+            return { data: await decryptPayload(row.data, keyHex), updated_at: row.updated_at };
         }
-        async function sbPushBoard(board, payload) {
+        async function sbPushBoard(board, payload, keyHex) {
             if (!SYNC.url || !SYNC.anon || !board) throw new Error('未配置');
             const base = SYNC.url.replace(/\/+$/, '');
             const table = SYNC.table || 'workbench_state';
             const url = base + '/rest/v1/' + table + '?on_conflict=id';
-            const stored = await encryptPayload(payload);
+            const stored = await encryptPayload(payload, keyHex);
             const r = await fetch(url, {
                 method: 'POST',
                 headers: {
@@ -8666,6 +8660,9 @@
                 const mineHasData = payloadHasData(mine && mine.data);
                 if (!mineHasData) {
                     if (!legacyHasData) return;   // 两边都空：没有要保护的东西，不动老 board
+                    // v1.30.289：只有「已证明是本人」的登录才允许从公开老 board 搬数据，
+                    // 否则任何非本人会话都能把公开数据搬进他自己的标识下（这是上一版的漏洞）。
+                    if (!_ownerOk) return;
                     // 沿用既有「首拉」口径：云端为准，只把本机独有的记录并进去
                     const merged = mergeLocalAdditions(collectLocalPayload(), legacy.data);
                     await sbPushBoard(board, merged);
@@ -8791,14 +8788,19 @@
             document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && _dirty) pushState(); });
         }
 
-        // ============ 登录门禁（v1.30.287 引入 / v1.30.288 升级为「账号即钥匙」）============
-        // 无后端。首次使用创建账号（邮箱 + 密码）：
-        //   ① 本机门禁：密码加盐哈希后仅存本机，登录后写 localStorage 会话 → 不手动退出就一直保持登录；
-        //   ② 云端隔离：由「邮箱 + 密码」派生出**私有 board 标识**与**加密密钥** —— 只有你的账号能算出它们，
-        //      所以别人随便注册一套账号只会得到他自己的空数据，看不到你的；云端存的也是密文。
-        // ⚠️ 邮箱 + 密码 = 你云端数据的唯一钥匙，务必记牢（派生是单向的，忘了无法找回）。
-        const AUTH_ACCOUNT_KEY = 'pa_auth_account';
+        // ============ 登录门禁（v1.30.289：锁死唯一账号）============
+        // 规则：全应用**只有一个账号** —— 邮箱固定 tedvong@126.com，密码校验值（随机盐 + SHA-256）直接写在本代码里。
+        //   ⇒ 任何设备打开都只能用这唯一一套账号密码登录；**没有注册/创建账号入口**，填任何别的邮箱一律拒绝。
+        //   ⇒ 登录后写 localStorage 会话 → 不手动退出就一直保持登录。
+        // 云端隔离（v1.30.288 起）：由「邮箱 + 密码」派生**私有 board 标识**与**加密密钥**（密钥只在本机、绝不上传），
+        //   别人既算不出你的标识，也读不懂云端密文。
+        const ALLOWED_EMAIL = 'tedvong@126.com';
+        const ALLOWED_SALT = 'uph7gthq5tpmuf61bdl';
+        const ALLOWED_HASH = '210d4bfbfd83cc4d4b8d313fefb0f5c6e746a2903a963a10736c7952c3d1a36c';
         const AUTH_SESSION_KEY = 'pa_auth_session';
+        // 本次登录是否已证明「本人」：内置校验值通过 或 云端数据能被该密码派生的密钥解开。
+        // 两种路径强度等价（都要有正确的唯一密码），都允许从老公开 board 搬数据；否则一律不搬。
+        let _ownerOk = false;
         // 退出登录时清除的本机数据/界面状态键（同步配置、版本号、迁移标记保留）
         const AUTH_WIPE_KEYS = [
             STORAGE_KEY, PARAMS_KEY, MONTHLY_KEY, YIELD_KEY, TF_KEY, ORDER_KEY,
@@ -8806,21 +8808,15 @@
             'deduction_daily_collapsed', 'yield_detail_collapsed',
             'order_detail_collapsed', 'salary_section_collapsed'
         ];
-        let _authMode = 'login';
         let _booted = false;
 
         function _authEl(id) { return document.getElementById(id); }
 
-        function _authAccount() {
-            try { return JSON.parse(localStorage.getItem(AUTH_ACCOUNT_KEY) || 'null'); } catch (e) { return null; }
-        }
-
         function isAuthed() {
             try {
                 const sess = JSON.parse(localStorage.getItem(AUTH_SESSION_KEY) || 'null');
-                const acct = _authAccount();
-                // v1.30.288：老会话没有私有标识/密钥，一律要求重新登录一次（否则同步会静默失效）
-                return !!(sess && acct && sess.email && sess.email === acct.email && sess.board);
+                // 必须同时满足：唯一固定邮箱 + 私有标识（老会话没有私有标识的，一律要求重新登录一次）
+                return !!(sess && sess.email === ALLOWED_EMAIL && sess.board);
             } catch (e) { return false; }
         }
 
@@ -8863,21 +8859,11 @@
         }
 
         function renderAuthMode() {
-            const isReg = _authMode === 'register';
-            const title = _authEl('auth-title'), sub = _authEl('auth-sub'), btn = _authEl('auth-submit');
-            const p2 = _authEl('auth-pwd2-field'), sw = _authEl('auth-switch'), pwd = _authEl('auth-pwd-input');
-            if (title) title.textContent = isReg ? '创建账号' : '生产经营分析系统';
-            if (sub) sub.textContent = isReg
-                ? '首次使用，请设置邮箱与密码\n这两项就是你云端数据的唯一钥匙\n（忘了无法找回，请记牢）'
-                : '请输入邮箱与密码登录';
-            if (btn) btn.textContent = isReg ? '创建并登录' : '登录';
-            if (p2) p2.style.display = isReg ? 'block' : 'none';
-            if (pwd) pwd.setAttribute('autocomplete', isReg ? 'new-password' : 'current-password');
-            if (sw) sw.textContent = isReg ? '' : '忘记密码？重置账号';
+            const pwd = _authEl('auth-pwd-input');
+            if (pwd) pwd.setAttribute('autocomplete', 'current-password');
         }
 
         function showAuthGate() {
-            _authMode = _authAccount() ? 'login' : 'register';
             document.body.classList.add('auth-locked');
             const gate = _authEl('auth-gate');
             if (gate) gate.classList.add('active');
@@ -8886,18 +8872,20 @@
             const err = _authEl('auth-err');
             if (err) err.textContent = '';
             renderAuthMode();
-            setTimeout(function () { const el = _authEl('auth-email-input'); if (el) el.focus(); }, 80);
+            setTimeout(function () { const el = _authEl('auth-pwd-input'); if (el) el.focus(); }, 80);
         }
 
-        function switchAuthMode() {
-            if (!_authAccount()) return;
-            if (!confirm('重置账号会清除本机全部数据，并切换到新的一套邮箱/密码（即新的一份云端数据）。\n『钥匙』就是原邮箱 + 原密码，重置后需要原钥匙才能取回原来那份。\n\n确定重置？')) return;
-            try {
-                AUTH_WIPE_KEYS.forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
-                localStorage.removeItem(AUTH_ACCOUNT_KEY);
-                localStorage.removeItem(AUTH_SESSION_KEY);
-            } catch (e) {}
-            location.reload();
+        // 云端兜底校验：用「能否解开你自己的云端数据」反证密码 —— 只有正确密码能算出对应标识 + 对应密钥。
+        //   ⚠️ 此刻会话还没写入，必须把 cr.keyHex 显式传进去解密（否则取不到密钥 → 解密抛错 → 永远登不进）。
+        //   错误密码派生的密钥解不开密文（AES-GCM 校验失败抛错）→ 返回 null 拒绝。
+        function _verifyByCloud(pwd) {
+            return deriveCrypto(ALLOWED_EMAIL, pwd).then(function (cr) {
+                if (typeof sbPullBoard !== 'function') return null;
+                return sbPullBoard(cr.board, cr.keyHex).then(function (row) {
+                    if (!row || !payloadHasData(row.data)) return null;
+                    return cr;
+                }, function () { return null; });
+            });
         }
 
         function submitAuth() {
@@ -8906,44 +8894,40 @@
             const email = ((eIn && eIn.value) || '').trim().toLowerCase();
             const pwd = (pIn && pIn.value) || '';
             if (err) err.textContent = '';
-            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { if (err) err.textContent = '请输入正确的邮箱地址'; return; }
-            if (pwd.length < 4) { if (err) err.textContent = '密码至少 4 位'; return; }
-            const acct = _authAccount();
-            if (_authMode === 'register' || !acct) {
-                const p2In = _authEl('auth-pwd2-input');
-                if (pwd !== ((p2In && p2In.value) || '')) { if (err) err.textContent = '两次输入的密码不一致'; return; }
-                const salt = Math.random().toString(36).slice(2) + Date.now().toString(36);
-                Promise.all([_hashPwd(pwd, salt), deriveCrypto(email, pwd)]).then(function (r) {
-                    try {
-                        localStorage.setItem(AUTH_ACCOUNT_KEY, JSON.stringify({ email: email, salt: salt, hash: r[0], createdAt: new Date().toISOString() }));
-                    } catch (e) {}
-                    _setSession(email, r[1].board, r[1].keyHex);
-                    _afterAuthSuccess();
-                });
-            } else {
-                _hashPwd(pwd, acct.salt).then(function (hash) {
-                    if (hash !== acct.hash) {
+            // 邮箱固定：读写都在代码里，改了就拒绝（不存在"注册别的账号"这条路）
+            if (email !== ALLOWED_EMAIL) { if (err) err.textContent = '本应用只允许固定账号登录'; return; }
+            if (!pwd) { if (err) err.textContent = '请输入密码'; return; }
+            _hashPwd(pwd, ALLOWED_SALT).then(function (hash) {
+                if (hash === ALLOWED_HASH) {
+                    _ownerOk = true;
+                    return deriveCrypto(ALLOWED_EMAIL, pwd).then(function (cr) {
+                        _setSession(ALLOWED_EMAIL, cr.board, cr.keyHex);
+                        _afterAuthSuccess();
+                    });
+                }
+                // 内置校验值没对上：退一步用云端数据反证（仅正确密码可行）
+                return _verifyByCloud(pwd).then(function (cr) {
+                    if (!cr) {
                         if (err) err.textContent = '密码不正确';
                         if (pIn) { pIn.value = ''; pIn.focus(); }
                         return;
                     }
-                    deriveCrypto(acct.email, pwd).then(function (cr) {
-                        _setSession(acct.email, cr.board, cr.keyHex);
-                        _afterAuthSuccess();
-                    });
+                    // 能算出标识、还能用自己的密钥解开云端密文 = 同等强度的本人证明
+                    _ownerOk = true;
+                    _setSession(ALLOWED_EMAIL, cr.board, cr.keyHex);
+                    _afterAuthSuccess();
                 });
-            }
+            });
         }
 
         function _afterAuthSuccess() {
             document.body.classList.remove('auth-locked');
             const gate = _authEl('auth-gate');
             if (gate) gate.classList.remove('active');
-            const acct = _authAccount();
             const chip = _authEl('auth-user'), mail = _authEl('auth-user-email');
-            if (chip && acct) {
+            if (chip) {
                 chip.style.display = 'flex';
-                if (mail) mail.textContent = acct.email;
+                if (mail) mail.textContent = ALLOWED_EMAIL;
             }
             if (!_booted) {
                 _booted = true;
