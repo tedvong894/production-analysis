@@ -2199,9 +2199,9 @@
                     <div class="hint">默认复用军机处的 workbench_state 表（字段 id / data / updated_at），无需新建表。</div>
                 </div>
                 <div class="sync-field">
-                    <label>同步标识（board）</label>
-                    <input type="text" id="sync-board" placeholder="pa_xxxxxxxx">
-                    <div class="hint">本 app 专属的一串随机标识，相当于「数据钥匙」。多台设备必须填完全一致才能共用数据，请勿外泄。</div>
+                    <label>同步标识（由账号自动生成，只读）</label>
+                    <input type="text" id="sync-board" readonly style="background:#f5f6f8; color:#666;">
+                    <div class="hint">由「邮箱 + 密码」自动算出，云端存的是加密后的密文。同一套账号在任何设备都会指向同一份数据，无需手工填写。</div>
                 </div>
 
                 <div id="sync-msg" style="display:none; padding:9px 12px; border-radius:8px; font-size:12px; margin-bottom:12px;"></div>
@@ -2352,7 +2352,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.287</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.288</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -7685,7 +7685,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.287';
+        const APP_VERSION = 'v1.30.288';
 
         function forceRefresh() {
             if ('caches' in window) {
@@ -8382,11 +8382,13 @@
         // pull 采纳云端、绝不反向写云端；_dirty 脏标记守卫；首拉离线保护；离开页面兜底 flush。
         // 复用军机处同一 Supabase 项目与 workbench_state 表（字段 id/data/updated_at），用本 app 专属 board 行隔离。
         const SYNC_CFG_KEY = 'production_analysis_sync_cfg';
+        // ⚠️ v1.30.288：这是老版本写死在网页里的「公开固定 board」。任何人拿网页里公开的 anon key
+        // 都能直接读到它下面的数据，因此本版起改为按账号派生私有 board；此常量只为一次性搬迁保留。
+        const LEGACY_SYNC_BOARD = 'pa_117efa521edd005973de3d4b';
         const SYNC_DEFAULT = {
             enabled: true,
             url: 'https://gcwehwqcccmjxrqtolev.supabase.co',
             anon: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdjd2Vod3FjY2NtanhycXRvbGV2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ2MTQzNDAsImV4cCI6MjEwMDE5MDM0MH0.X0X-75d1wPSTXECZDRVtkWVyDaj9ot9JLp_Qc2YamB8',
-            board: 'pa_117efa521edd005973de3d4b',
             table: 'workbench_state'
         };
         function loadSyncCfg() {
@@ -8395,6 +8397,7 @@
             return Object.assign({}, SYNC_DEFAULT, cfg);
         }
         let SYNC = loadSyncCfg();
+        delete SYNC.board;   // v1.30.288：不再使用固定 board（改为按账号派生）
         let _pushTimer = null, _pulled = false, _dirty = false, _suppressDirty = false, _syncing = false, _lastSyncAt = null, _lastErr = '', _lastCloudJson = null;
 
         function saveSyncCfg() { try { localStorage.setItem(SYNC_CFG_KEY, JSON.stringify(SYNC)); } catch (e) {} }
@@ -8448,21 +8451,75 @@
             } catch (e) { return false; }
         }
 
-        async function sbPull() {
-            if (!SYNC.url || !SYNC.anon || !SYNC.board) throw new Error('未配置');
+        // ---- v1.30.288：云端标识与密钥都取自登录会话（由邮箱+密码派生）----
+        function _sessField(name) {
+            try {
+                const s = JSON.parse(localStorage.getItem(AUTH_SESSION_KEY) || 'null');
+                return (s && s[name]) ? s[name] : '';
+            } catch (e) { return ''; }
+        }
+        function getSyncBoard() { return _sessField('board'); }
+        function getSyncKeyHex() { return _sessField('key'); }
+
+        // ---- 载荷加密（AES-GCM）：密钥不出本机；云端只存密文 ----
+        let _encKeyCache = { hex: '', key: null };
+        function _hexToBytes(hex) {
+            const n = Math.floor(hex.length / 2), out = new Uint8Array(n);
+            for (let i = 0; i < n; i++) out[i] = parseInt(hex.substr(i * 2, 2), 16) || 0;
+            return out;
+        }
+        function _bytesToB64(bytes) {
+            const b = new Uint8Array(bytes); let out = '';
+            for (let i = 0; i < b.length; i++) out += String.fromCharCode(b[i]);
+            return btoa(out);
+        }
+        function _b64ToBytes(b64) {
+            const str = atob(b64), out = new Uint8Array(str.length);
+            for (let i = 0; i < str.length; i++) out[i] = str.charCodeAt(i);
+            return out;
+        }
+        async function getSyncEncKey() {
+            const hex = getSyncKeyHex();
+            if (!hex) return null;
+            if (!(window.crypto && crypto.subtle && crypto.subtle.importKey) || !window.TextEncoder) return null;
+            if (_encKeyCache.key && _encKeyCache.hex === hex) return _encKeyCache.key;
+            const key = await crypto.subtle.importKey('raw', _hexToBytes(hex.slice(0, 64)), { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+            _encKeyCache = { hex: hex, key: key };
+            return key;
+        }
+        async function encryptPayload(obj) {
+            const key = await getSyncEncKey();
+            if (!key) return obj;   // 仅非安全上下文（拿不到 SubtleCrypto）才退回明文
+            const iv = crypto.getRandomValues(new Uint8Array(12));
+            const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, key, new TextEncoder().encode(JSON.stringify(obj)));
+            return { __enc: 1, v: 1, iv: _bytesToB64(iv), ct: _bytesToB64(ct) };
+        }
+        async function decryptPayload(stored) {
+            if (!stored || typeof stored !== 'object' || !stored.__enc) return stored;  // 旧版明文照常读（搬迁期）
+            const key = await getSyncEncKey();
+            if (!key) throw new Error('缺少解密密钥');   // 绝不返回空对象 → 不会误覆盖本机数据
+            const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: _b64ToBytes(stored.iv) }, key, _b64ToBytes(stored.ct));
+            return JSON.parse(new TextDecoder().decode(pt));
+        }
+
+        async function sbPullBoard(board) {
+            if (!SYNC.url || !SYNC.anon || !board) throw new Error('未配置');
             const base = SYNC.url.replace(/\/+$/, '');
             const table = SYNC.table || 'workbench_state';
-            const url = base + '/rest/v1/' + table + '?id=eq.' + encodeURIComponent(SYNC.board) + '&select=data,updated_at';
+            const url = base + '/rest/v1/' + table + '?id=eq.' + encodeURIComponent(board) + '&select=data,updated_at';
             const r = await fetch(url, { headers: { apikey: SYNC.anon, Authorization: 'Bearer ' + SYNC.anon, Accept: 'application/json' } });
             if (!r.ok) throw new Error('HTTP ' + r.status);
             const arr = await r.json();
-            return (Array.isArray(arr) && arr.length) ? arr[0] : null;
+            const row = (Array.isArray(arr) && arr.length) ? arr[0] : null;
+            if (!row) return null;
+            return { data: await decryptPayload(row.data), updated_at: row.updated_at };
         }
-        async function sbPush(payload) {
-            if (!SYNC.url || !SYNC.anon || !SYNC.board) throw new Error('未配置');
+        async function sbPushBoard(board, payload) {
+            if (!SYNC.url || !SYNC.anon || !board) throw new Error('未配置');
             const base = SYNC.url.replace(/\/+$/, '');
             const table = SYNC.table || 'workbench_state';
             const url = base + '/rest/v1/' + table + '?on_conflict=id';
+            const stored = await encryptPayload(payload);
             const r = await fetch(url, {
                 method: 'POST',
                 headers: {
@@ -8470,14 +8527,17 @@
                     'Content-Type': 'application/json',
                     Prefer: 'resolution=merge-duplicates,return=minimal'
                 },
-                body: JSON.stringify([{ id: SYNC.board, data: payload, updated_at: new Date().toISOString() }])
+                body: JSON.stringify([{ id: board, data: stored, updated_at: new Date().toISOString() }])
             });
             if (!r.ok) throw new Error('HTTP ' + r.status);
         }
+        async function sbPull() { return sbPullBoard(getSyncBoard()); }
+        async function sbPush(payload) { return sbPushBoard(getSyncBoard(), payload); }
 
         // 推：本机 → 云端（首次成功拉取前绝不执行，避免用本地旧数据覆盖云端）
         function pushState() {
             if (!SYNC.enabled) { setSync('本地'); return; }
+            if (!getSyncBoard()) { setSync('本地'); return; }   // v1.30.288：未登录不写云端
             if (!_pulled) return;
             setSync('同步中…', 'busy');
             clearTimeout(_pushTimer);
@@ -8540,6 +8600,7 @@
         // 拉：云端 → 本机（云端为权威）
         async function pullState() {
             if (!SYNC.enabled) { setSync('本地'); return; }
+            if (!getSyncBoard()) { setSync('本地'); return; }   // v1.30.288：未登录不读云端
             if (_syncing) return;
             _syncing = true;
             setSync('同步中…', 'busy');
@@ -8589,6 +8650,33 @@
                 if (_lastErr) showSyncMsg('同步失败：' + _lastErr, 'warn');
                 else showSyncMsg('已与云端同步最新数据', 'ok');
             }
+        }
+
+        // v1.30.288：老版本的固定 board 是公开可读的，首次用私有标识登录时做一次性搬迁：
+        //   老 board 的料 → 私有 board；确认搬成功后清空老 board（否则任何人都还能读到）。
+        // 幂等：私有 board 已有数据时只做「清空老 board」；两边都没数据时什么都不做。
+        async function migrateLegacyBoardOnce() {
+            const board = getSyncBoard();
+            if (!board || !SYNC.enabled || !SYNC.url || !SYNC.anon) return;
+            if (board === LEGACY_SYNC_BOARD) return;
+            try {
+                const legacy = await sbPullBoard(LEGACY_SYNC_BOARD);
+                const legacyHasData = payloadHasData(legacy && legacy.data);
+                const mine = await sbPullBoard(board);
+                const mineHasData = payloadHasData(mine && mine.data);
+                if (!mineHasData) {
+                    if (!legacyHasData) return;   // 两边都空：没有要保护的东西，不动老 board
+                    // 沿用既有「首拉」口径：云端为准，只把本机独有的记录并进去
+                    const merged = mergeLocalAdditions(collectLocalPayload(), legacy.data);
+                    await sbPushBoard(board, merged);
+                    const chk = await sbPullBoard(board);
+                    if (!payloadHasData(chk && chk.data)) return;   // 没搬成功 → 绝不清老数据
+                }
+                if (legacyHasData) {
+                    // 老数据已安全落到私有 board，把公开行清掉（只留一个搬迁标记）
+                    await sbPushBoard(LEGACY_SYNC_BOARD, { __migrated__: true, at: new Date().toISOString() });
+                }
+            } catch (e) { /* 网络/密钥异常静默跳过：本次不搬，下次登录再试，绝不因此丢数据 */ }
         }
 
         // 从 localStorage 重建全部内存对象并重渲染（采纳云端后调用）
@@ -8644,7 +8732,7 @@
             set('sync-url', SYNC.url || '');
             set('sync-anon', SYNC.anon || '');
             set('sync-table', SYNC.table || 'workbench_state');
-            set('sync-board', SYNC.board || '');
+            set('sync-board', getSyncBoard() || '（未登录）');
             const m = document.getElementById('sync-msg');
             if (m) m.style.display = 'none';
             const cls = SYNC.enabled ? (_lastErr ? 'err' : (_lastSyncAt ? 'on' : 'busy')) : '';
@@ -8662,7 +8750,6 @@
             SYNC.url = val('sync-url');
             SYNC.anon = val('sync-anon');
             SYNC.table = val('sync-table') || 'workbench_state';
-            SYNC.board = val('sync-board');
             saveSyncCfg();
         }
         function saveSyncPanelCfg() {
@@ -8704,10 +8791,12 @@
             document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && _dirty) pushState(); });
         }
 
-        // ============ 登录门禁（v1.30.287）============
-        // 纯本地门禁、无后端：首次使用创建账号（邮箱 + 加盐哈希密码，仅存本机）；
-        // 登录成功写入 localStorage 会话标记 → 不手动退出就一直保持登录；
-        // 「退出」清除本机会话与业务数据，避免在他人设备登录后残留信息（云端数据不动，下次登录自动拉回）。
+        // ============ 登录门禁（v1.30.287 引入 / v1.30.288 升级为「账号即钥匙」）============
+        // 无后端。首次使用创建账号（邮箱 + 密码）：
+        //   ① 本机门禁：密码加盐哈希后仅存本机，登录后写 localStorage 会话 → 不手动退出就一直保持登录；
+        //   ② 云端隔离：由「邮箱 + 密码」派生出**私有 board 标识**与**加密密钥** —— 只有你的账号能算出它们，
+        //      所以别人随便注册一套账号只会得到他自己的空数据，看不到你的；云端存的也是密文。
+        // ⚠️ 邮箱 + 密码 = 你云端数据的唯一钥匙，务必记牢（派生是单向的，忘了无法找回）。
         const AUTH_ACCOUNT_KEY = 'pa_auth_account';
         const AUTH_SESSION_KEY = 'pa_auth_session';
         // 退出登录时清除的本机数据/界面状态键（同步配置、版本号、迁移标记保留）
@@ -8730,7 +8819,8 @@
             try {
                 const sess = JSON.parse(localStorage.getItem(AUTH_SESSION_KEY) || 'null');
                 const acct = _authAccount();
-                return !!(sess && acct && sess.email && sess.email === acct.email);
+                // v1.30.288：老会话没有私有标识/密钥，一律要求重新登录一次（否则同步会静默失效）
+                return !!(sess && acct && sess.email && sess.email === acct.email && sess.board);
             } catch (e) { return false; }
         }
 
@@ -8750,13 +8840,35 @@
             return Promise.resolve(h1.toString(16) + h2.toString(16));
         }
 
+        // v1.30.288：由「邮箱 + 密码」单向派生
+        //   ① 私有 board 标识 —— 只有你的账号能算出，别人注册只会得到他自己的空标识；
+        //   ② 云端载荷加密密钥 —— 密钥不出本机（不上传），云端只存密文，
+        //      即使有人拿网页里公开的 anon key 枚举整张表，读到的也只是乱码。
+        // 两者都只依赖邮箱 + 密码，所以任何设备输入同一套账号 → 自动指向同一份数据。
+        function deriveCrypto(email, pwd) {
+            return Promise.all([
+                _hashPwd(pwd, 'pa_board_v1::' + email),
+                _hashPwd(pwd, 'pa_enc_v1::' + email)
+            ]).then(function (r) {
+                return { board: 'pa_' + String(r[0]).slice(0, 32), keyHex: String(r[1]) };
+            });
+        }
+
+        function _setSession(email, board, keyHex) {
+            try {
+                localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify({
+                    email: email, ts: Date.now(), board: board || '', key: keyHex || ''
+                }));
+            } catch (e) {}
+        }
+
         function renderAuthMode() {
             const isReg = _authMode === 'register';
             const title = _authEl('auth-title'), sub = _authEl('auth-sub'), btn = _authEl('auth-submit');
             const p2 = _authEl('auth-pwd2-field'), sw = _authEl('auth-switch'), pwd = _authEl('auth-pwd-input');
             if (title) title.textContent = isReg ? '创建账号' : '生产经营分析系统';
             if (sub) sub.textContent = isReg
-                ? '首次使用，请设置邮箱与密码\n（仅保存在本机，用于锁定本应用）'
+                ? '首次使用，请设置邮箱与密码\n这两项就是你云端数据的唯一钥匙\n（忘了无法找回，请记牢）'
                 : '请输入邮箱与密码登录';
             if (btn) btn.textContent = isReg ? '创建并登录' : '登录';
             if (p2) p2.style.display = isReg ? 'block' : 'none';
@@ -8779,7 +8891,7 @@
 
         function switchAuthMode() {
             if (!_authAccount()) return;
-            if (!confirm('重置账号会清除本机全部数据；云端数据不受影响，重新创建账号登录后会自动拉回。\n\n确定重置？')) return;
+            if (!confirm('重置账号会清除本机全部数据，并切换到新的一套邮箱/密码（即新的一份云端数据）。\n『钥匙』就是原邮箱 + 原密码，重置后需要原钥匙才能取回原来那份。\n\n确定重置？')) return;
             try {
                 AUTH_WIPE_KEYS.forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
                 localStorage.removeItem(AUTH_ACCOUNT_KEY);
@@ -8801,11 +8913,11 @@
                 const p2In = _authEl('auth-pwd2-input');
                 if (pwd !== ((p2In && p2In.value) || '')) { if (err) err.textContent = '两次输入的密码不一致'; return; }
                 const salt = Math.random().toString(36).slice(2) + Date.now().toString(36);
-                _hashPwd(pwd, salt).then(function (hash) {
+                Promise.all([_hashPwd(pwd, salt), deriveCrypto(email, pwd)]).then(function (r) {
                     try {
-                        localStorage.setItem(AUTH_ACCOUNT_KEY, JSON.stringify({ email: email, salt: salt, hash: hash, createdAt: new Date().toISOString() }));
-                        localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify({ email: email, ts: Date.now() }));
+                        localStorage.setItem(AUTH_ACCOUNT_KEY, JSON.stringify({ email: email, salt: salt, hash: r[0], createdAt: new Date().toISOString() }));
                     } catch (e) {}
+                    _setSession(email, r[1].board, r[1].keyHex);
                     _afterAuthSuccess();
                 });
             } else {
@@ -8815,8 +8927,10 @@
                         if (pIn) { pIn.value = ''; pIn.focus(); }
                         return;
                     }
-                    try { localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify({ email: acct.email, ts: Date.now() })); } catch (e) {}
-                    _afterAuthSuccess();
+                    deriveCrypto(acct.email, pwd).then(function (cr) {
+                        _setSession(acct.email, cr.board, cr.keyHex);
+                        _afterAuthSuccess();
+                    });
                 });
             }
         }
@@ -8831,8 +8945,12 @@
                 chip.style.display = 'flex';
                 if (mail) mail.textContent = acct.email;
             }
-            if (!_booted) { _booted = true; bootApp(); }
-            else if (typeof syncNow === 'function') { try { syncNow(false); } catch (e) {} }
+            if (!_booted) {
+                _booted = true;
+                // v1.30.288：首次用私有标识登录时，先把老「公开 board」的数据搬进来。
+                // 网络异常也照常进应用（catch 兜底），绝不因为搬迁失败而进不去。
+                try { migrateLegacyBoardOnce().then(bootApp, bootApp); } catch (e) { bootApp(); }
+            } else if (typeof syncNow === 'function') { try { syncNow(false); } catch (e) {} }
         }
 
         function doLogout() {
