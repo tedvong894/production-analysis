@@ -271,6 +271,29 @@
         body.pdf-exporting .ba-edit { display: none !important; }
         body.pdf-exporting .ba-text { display: block !important; }
         body.pdf-exporting .brief-analysis.collapsed { display: none !important; }
+        /* 富文本编辑：分析文本（本阶段综合分析等）可加格式 */
+        .ba-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 6px; }
+        .ba-toolbar .ba-tb {
+            font-size: 13px; line-height: 1; padding: 5px 9px; border-radius: 6px;
+            border: 1px solid #d0d5dd; background: #fff; color: #333; cursor: pointer; outline: none;
+        }
+        .ba-toolbar .ba-tb:hover { background: #f2f5fa; }
+        .ba-toolbar .ba-tb.active { background: #e7edff; border-color: #2d5af5; color: #2d5af5; }
+        .ba-toolbar .ba-sep { width: 1px; height: 18px; background: #e3e7ee; margin: 0 2px; align-self: center; }
+        .ba-toolbar .ba-sw { width: 18px; height: 18px; border-radius: 4px; border: 1px solid #d0d5dd; cursor: pointer; padding: 0; }
+        .ba-toolbar .ba-color-input { width: 26px; height: 24px; padding: 0; border: 1px solid #d0d5dd; border-radius: 6px; background: #fff; cursor: pointer; }
+        .ba-editor {
+            width: 100%; min-height: 96px; box-sizing: border-box; padding: 8px 10px;
+            border: 1px solid #d0d5dd; border-radius: 8px; font-size: 17px; line-height: 1.6;
+            font-family: inherit; color: #333; background: #fff; overflow: auto;
+            white-space: pre-wrap; word-break: break-word;
+        }
+        .ba-editor:focus { outline: none; border-color: #2d5af5; }
+        .ba-editor:empty:before { content: '在此输入分析内容…（可点上方按钮设标题 / 加粗 / 下划线 / 颜色）'; color: #aaa; }
+        .ba-text h3, .ba-editor h3 { font-size: 19px; font-weight: 700; color: #1a1a2e; margin: 6px 0 4px; line-height: 1.4; }
+        .ba-text h4, .ba-editor h4 { font-size: 17px; font-weight: 700; color: #1a1a2e; margin: 5px 0 3px; }
+        .ba-text p, .ba-editor p { margin: 4px 0; }
+        .ba-text u, .ba-editor u { text-decoration: underline; }
 
         /* 内容区 */
         .page { display: none; padding: 12px; max-width: 980px; margin: 0 auto; }
@@ -2346,7 +2369,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.290</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.291</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -6459,10 +6482,99 @@
                 return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
             });
         }
+        // 富文本：是否看起来已是带标签的 HTML（与我们用 execCommand 生成的标签一致）
+        function baLooksHtml(s) {
+            return /<(b|i|u|strong|em|span|div|p|br|h[1-6]|font)\b/i.test(s || '');
+        }
+        // 展示用：旧纯文本 → 转义后交给 CSS pre-wrap 保留换行；新 HTML → 白名单清洗后原样渲染
+        function baRenderContent(raw) {
+            if (!raw) return '';
+            if (baLooksHtml(raw)) return baSanitize(raw);
+            return escapeHtml(raw);
+        }
+        // 进入编辑态时的初始内容：旧纯文本转义显示，新 HTML 原样填入
+        function baEditableInitial(key) {
+            const raw = loadBriefAnalysis(key);
+            if (!raw) return '';
+            return baLooksHtml(raw) ? raw : escapeHtml(raw);
+        }
+        // 白名单清洗：只留 b/strong/i/em/u/span/div/p/br/h1-4/font；span/font 仅保留 color；
+        // 其余标签拆壳保留其子节点；script/style 等整体丢弃；避免粘贴脏 HTML 破坏版式与导出。
+        function baSanitize(html) {
+            if (typeof document === 'undefined' || !document.createElement) return String(html == null ? '' : html);
+            var ALLOW = ['B','STRONG','I','EM','U','SPAN','DIV','P','BR','H1','H2','H3','H4','FONT'];
+            // 危险标签：整体（含内部文本/脚本）删除，不保留其内容
+            var DROP = ['SCRIPT','STYLE','IFRAME','OBJECT','EMBED','LINK','META','NOSCRIPT','TEMPLATE'];
+            var box = document.createElement('div');
+            box.innerHTML = (html == null ? '' : html);
+            (function walk(node) {
+                var kids = Array.prototype.slice.call(node.childNodes);
+                for (var i = 0; i < kids.length; i++) {
+                    var c = kids[i];
+                    if (c.nodeType === 3) continue;
+                    if (c.nodeType !== 1) { if (c.parentNode) c.parentNode.removeChild(c); continue; }
+                    var tag = c.tagName;
+                    if (ALLOW.indexOf(tag) === -1) {
+                        var p = c.parentNode;
+                        if (DROP.indexOf(tag) >= 0) {
+                            if (p) p.removeChild(c);          // 危险标签：连内容一起删
+                        } else {
+                            while (c.firstChild) p.insertBefore(c.firstChild, c);  // 其它标签：拆壳保留子节点
+                            p.removeChild(c);
+                            walk(p);
+                            return;
+                        }
+                        continue;
+                    }
+                    var attrs = Array.prototype.slice.call(c.attributes);
+                    for (var j = 0; j < attrs.length; j++) {
+                        var a = attrs[j];
+                        var an = a.name.toLowerCase();
+                        if (tag === 'SPAN' || tag === 'FONT') {
+                            if (an === 'style') {
+                                var m = /color\s*:\s*([^;]+)/i.exec(a.value);
+                                if (m) c.setAttribute('style', 'color:' + m[1].trim());
+                                else c.removeAttribute('style');
+                            } else if (an !== 'color') { c.removeAttribute(a.name); }
+                        } else { c.removeAttribute(a.name); }
+                    }
+                    walk(c);
+                }
+            })(box);
+            return box.innerHTML;
+        }
+        function baFmt(key, cmd) {
+            var ed = document.getElementById('ba-ed-' + key);
+            if (!ed) return;
+            ed.focus();
+            try {
+                if (cmd === 'bold') document.execCommand('bold');
+                else if (cmd === 'underline') document.execCommand('underline');
+                else if (cmd === 'h3' || cmd === 'h4' || cmd === 'p') document.execCommand('formatBlock', false, cmd.toUpperCase());
+            } catch (e) {}
+            baSyncToolbarState(key);
+        }
+        function baColor(key, color) {
+            var ed = document.getElementById('ba-ed-' + key);
+            if (!ed) return;
+            ed.focus();
+            try { document.execCommand('styleWithCSS', false, false); } catch (e) {}
+            try { document.execCommand('foreColor', false, color); } catch (e) {}
+            baSyncToolbarState(key);
+        }
+        function baSyncToolbarState(key) {
+            try {
+                var b = document.getElementById('ba-tb-bold-' + key);
+                var u = document.getElementById('ba-tb-u-' + key);
+                if (b) b.classList.toggle('active', !!document.queryCommandState('bold'));
+                if (u) u.classList.toggle('active', !!document.queryCommandState('underline'));
+            } catch (e) {}
+        }
+
         function briefAnalysisHtml(key) {
             const text = loadBriefAnalysis(key);
             const has = !!text;
-            const safe = escapeHtml(text);
+            const rendered = has ? baRenderContent(text) : '';
             const cls = (has ? '' : ' ba-empty collapsed');
             return '<div class="brief-analysis' + cls + '" data-ba-key="' + key + '">'
                 + '<div class="ba-head" onclick="toggleBriefAnalysis(\'' + key + '\')">'
@@ -6475,12 +6587,30 @@
                     : '<button class="ba-btn" onclick="event.stopPropagation(); editBriefAnalysis(\'' + key + '\')">添加</button>')
                 + '</div>'
                 + '<div class="ba-body" id="ba-body-' + key + '"' + (has ? '' : ' style="display:none;"') + '>'
-                + '<div class="ba-text" id="ba-text-' + key + '">' + (has ? safe : '<span class="ba-empty">（暂无分析，点击「添加」填写）</span>') + '</div>'
+                + '<div class="ba-text" id="ba-text-' + key + '">' + (has ? rendered : '<span class="ba-empty">（暂无分析，点击「添加」填写）</span>') + '</div>'
                 + '<div class="ba-edit" id="ba-edit-' + key + '" style="display:none;">'
-                + '<textarea class="ba-textarea" id="ba-ta-' + key + '">' + safe + '</textarea>'
+                + '<div class="ba-toolbar" id="ba-tb-' + key + '">'
+                +   '<button type="button" class="ba-tb" onclick="event.stopPropagation(); baFmt(\'' + key + '\',\'h3\')" title="标题">标题</button>'
+                +   '<button type="button" class="ba-tb" onclick="event.stopPropagation(); baFmt(\'' + key + '\',\'p\')" title="正文">正文</button>'
+                +   '<span class="ba-sep"></span>'
+                +   '<button type="button" class="ba-tb" id="ba-tb-bold-' + key + '" onclick="event.stopPropagation(); baFmt(\'' + key + '\',\'bold\')" title="加粗"><b>B</b></button>'
+                +   '<button type="button" class="ba-tb" id="ba-tb-u-' + key + '" onclick="event.stopPropagation(); baFmt(\'' + key + '\',\'underline\')" title="下划线"><u>U</u></button>'
+                +   '<span class="ba-sep"></span>'
+                +   '<span style="font-size:12px;color:#888;margin:0 2px;">颜色</span>'
+                +   '<button type="button" class="ba-sw" style="background:#1a1a2e" onclick="event.stopPropagation(); baColor(\'' + key + '\',\'#1a1a2e\')" title="黑"></button>'
+                +   '<button type="button" class="ba-sw" style="background:#d9534f" onclick="event.stopPropagation(); baColor(\'' + key + '\',\'#d9534f\')" title="红"></button>'
+                +   '<button type="button" class="ba-sw" style="background:#2d5af5" onclick="event.stopPropagation(); baColor(\'' + key + '\',\'#2d5af5\')" title="蓝"></button>'
+                +   '<button type="button" class="ba-sw" style="background:#2e9e5b" onclick="event.stopPropagation(); baColor(\'' + key + '\',\'#2e9e5b\')" title="绿"></button>'
+                +   '<button type="button" class="ba-sw" style="background:#e09f3e" onclick="event.stopPropagation(); baColor(\'' + key + '\',\'#e09f3e\')" title="橙"></button>'
+                +   '<button type="button" class="ba-sw" style="background:#888" onclick="event.stopPropagation(); baColor(\'' + key + '\',\'#888\')" title="灰"></button>'
+                +   '<input type="color" class="ba-color-input" title="自定义颜色" onchange="event.stopPropagation(); baColor(\'' + key + '\', this.value)">'
+                + '</div>'
+                + '<div class="ba-editor" id="ba-ed-' + key + '" contenteditable="true" spellcheck="false"'
+                +   ' onkeyup="baSyncToolbarState(\'' + key + '\')" onmouseup="baSyncToolbarState(\'' + key + '\')">'
+                +   baEditableInitial(key) + '</div>'
                 + '<div class="ba-actions">'
-                + '<button class="ba-btn ba-save" onclick="event.stopPropagation(); commitBriefAnalysis(\'' + key + '\')">保存</button>'
-                + '<button class="ba-btn ba-cancel" onclick="event.stopPropagation(); cancelBriefAnalysis(\'' + key + '\')">取消</button>'
+                +   '<button class="ba-btn ba-save" onclick="event.stopPropagation(); commitBriefAnalysis(\'' + key + '\')">保存</button>'
+                +   '<button class="ba-btn ba-cancel" onclick="event.stopPropagation(); cancelBriefAnalysis(\'' + key + '\')">取消</button>'
                 + '</div></div></div></div>';
         }
         function mountBriefAnalysis(containerId, key) {
@@ -6507,16 +6637,48 @@
             const text = document.getElementById('ba-text-' + key);
             const edit = document.getElementById('ba-edit-' + key);
             const body = document.getElementById('ba-body-' + key);
-            const ta = document.getElementById('ba-ta-' + key);
+            const ed = document.getElementById('ba-ed-' + key);
             if (text) text.style.display = 'none';
             if (edit) edit.style.display = 'block';
             if (body) body.style.display = 'block';
-            if (ta) { ta.focus(); try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch (e) {} }
+            if (ed) {
+                ed.focus();
+                try {
+                    const r = document.createRange();
+                    r.selectNodeContents(ed);
+                    r.collapse(false);
+                    const sel = window.getSelection();
+                    sel.removeAllRanges();
+                    sel.addRange(r);
+                } catch (e) {}
+            }
+            baSyncToolbarState(key);
         }
         function commitBriefAnalysis(key) {
-            const ta = document.getElementById('ba-ta-' + key);
-            if (!ta) return;
-            saveBriefAnalysisText(key, ta.value);
+            const ed = document.getElementById('ba-ed-' + key);
+            if (!ed) return;
+            const html = baSanitize(ed.innerHTML);
+            // 纯空白（只剩 <br>/空格/换行/不间断空格）视为未填写 → 清空该块
+            let isEmpty = true;
+            try {
+                const tmp = document.createElement('div');
+                tmp.innerHTML = html;
+                                isEmpty = true;
+                try {
+                    const tmp = document.createElement('div');
+                    tmp.innerHTML = html;
+                    const t = (tmp.textContent || '');
+                    isEmpty = true;
+                    for (let i = 0; i < t.length; i++) {
+                        const c = t.charCodeAt(i);
+                        // 32=空格 9=Tab 10=LF 13=CR 0xa0=不间断空格 0x200b=零宽 0x3000=全角空格
+                        if (c !== 32 && c !== 9 && c !== 10 && c !== 13 && c !== 0xa0 && c !== 0x200b && c !== 0x3000) { isEmpty = false; break; }
+                    }
+                } catch (e) {}
+
+            } catch (e) {}
+            if (isEmpty) saveBriefAnalysisText(key, '');
+            else saveBriefAnalysisText(key, html);
             rerenderBriefBlock(key);
         }
         function cancelBriefAnalysis(key) {
@@ -7679,7 +7841,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.290';
+        const APP_VERSION = 'v1.30.291';
 
         function forceRefresh() {
             if ('caches' in window) {
