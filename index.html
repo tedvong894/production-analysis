@@ -2376,7 +2376,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.292</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.293</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -6064,7 +6064,7 @@
                         laborHtml += '<tr' + (isLatest ? ' class="analysis-latest"' : '') + '>';
                         laborHtml += '<td rowspan="2">' + safeLabel(i) + '</td>';
                         laborHtml += '<td>考核工段</td><td>' + fmtNum(r.assess.count) + '</td><td>' + fmtMoney(r.assess.amount) + '</td><td>' + fmtMoney(r.assess.unitPrice, 2) + '</td><td>' + fmtMoney(r.assess.avgWage) + '</td></tr>';
-                        laborHtml += '<tr><td>计件工段</td><td>' + fmtNum(r.piece.count) + '</td><td>' + fmtMoney(r.piece.amount) + '</td><td>' + fmtMoney(r.piece.unitPrice, 2) + '</td><td>' + fmtMoney(r.piece.avgWage) + '</td></tr>';
+                        laborHtml += '<tr' + (isLatest ? ' class="analysis-latest"' : '') + '><td>计件工段</td><td>' + fmtNum(r.piece.count) + '</td><td>' + fmtMoney(r.piece.amount) + '</td><td>' + fmtMoney(r.piece.unitPrice, 2) + '</td><td>' + fmtMoney(r.piece.avgWage) + '</td></tr>';
                     });
                     // 均值行（分 考核/计件，对每个指标取跨月均值）
                     if (months.length > 0) {
@@ -7938,7 +7938,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.292';
+        const APP_VERSION = 'v1.30.293';
 
         function forceRefresh() {
             if ('caches' in window) {
