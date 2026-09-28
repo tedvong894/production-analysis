@@ -2376,7 +2376,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.294</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.295</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -5718,6 +5718,34 @@
                 }
                 return `<img class="spark" width="${W}" height="${H}" src="${cv.toDataURL('image/png')}" alt="">`;
             };
+            // 人工成本走势：一张图 2 条线（考核工段 / 计件工段），量纲不打架，与「均值」行口径一致
+            const sparkline2 = (assessVals, pieceVals) => {
+                const a = assessVals || [], p = pieceVals || [];
+                const all = a.concat(p);
+                if (!all.length) return '';
+                const W = 88, H = 30, P = 4;
+                const lo = Math.min.apply(null, all), hi = Math.max.apply(null, all);
+                const span = (hi - lo) || 1;
+                const top = 4, bottom = H - P;
+                const yOf = v => (top + (bottom - top) * (1 - (v - lo) / span));
+                const n = Math.max(a.length, p.length);
+                const slot = (W - P * 2) / Math.max(n, 1);
+                const S = 2;
+                const cv = document.createElement('canvas');
+                cv.width = W * S; cv.height = H * S;
+                const ctx = cv.getContext('2d');
+                ctx.scale(S, S);
+                const drawLine = (vals, color) => {
+                    if (!vals.length) return;
+                    ctx.strokeStyle = color; ctx.lineWidth = 1.25; ctx.beginPath();
+                    vals.forEach((v, i) => { const cx = P + slot * (i + 0.5), cy = yOf(v); if (i === 0) ctx.moveTo(cx, cy); else ctx.lineTo(cx, cy); });
+                    ctx.stroke();
+                    vals.forEach((v, i) => { const cx = P + slot * (i + 0.5), cy = yOf(v); ctx.fillStyle = color; ctx.beginPath(); ctx.arc(cx, cy, 1.8, 0, Math.PI * 2); ctx.fill(); });
+                };
+                drawLine(a, '#5b9bd5');  // 考核工段
+                drawLine(p, '#ed7d31');  // 计件工段
+                return '<img class="spark" width="' + W + '" height="' + H + '" src="' + cv.toDataURL('image/png') + '" alt="">';
+            };
 
             // ===== 指标1：产量质量（居中；末行均值） =====
             const yEl = document.getElementById('analysis-yield-table');
@@ -6047,10 +6075,7 @@
             // ===== 指标3：人工成本（考核工段/计件工段；双规格分行，下方复合图表） =====
             const lEl = document.getElementById('analysis-labor-table');
             if (lEl) {
-                disposeAnalysisChart('laborCount');
-                disposeAnalysisChart('laborAmount');
-                disposeAnalysisChart('laborUnit');
-                disposeAnalysisChart('laborWage');
+                // 人工成本无 Chart 实例：走势为表格内 sparkline <img>（与其它表一致）
                 if (empty) {
                     lEl.innerHTML = '<div class="analysis-empty">暂无月份数据。</div>';
                 } else {
@@ -6078,59 +6103,25 @@
                         laborHtml += '<td rowspan="2">均值</td><td>考核工段</td><td>' + fmtNum(mAssess.count) + '</td><td>' + fmtMoney(mAssess.amount) + '</td><td>' + fmtMoney(mAssess.unitPrice, 2) + '</td><td>' + fmtMoney(mAssess.avgWage) + '</td></tr>';
                         laborHtml += '<tr class="analysis-total avg-row"><td>计件工段</td><td>' + fmtNum(mPiece.count) + '</td><td>' + fmtMoney(mPiece.amount) + '</td><td>' + fmtMoney(mPiece.unitPrice, 2) + '</td><td>' + fmtMoney(mPiece.avgWage) + '</td></tr>';
                     }
+                    // 走势行：每指标列一张 2 线迷你图（考核工段蓝 / 计件工段橙），与其它表走势行口径一致
+                    if (months.length >= 2) {
+                        const aCount = labRows.map(r => r.assess.count), pCount = labRows.map(r => r.piece.count);
+                        const aAmount = labRows.map(r => r.assess.amount), pAmount = labRows.map(r => r.piece.amount);
+                        const aUnit = labRows.map(r => r.assess.unitPrice), pUnit = labRows.map(r => r.piece.unitPrice);
+                        const aWage = labRows.map(r => r.assess.avgWage), pWage = labRows.map(r => r.piece.avgWage);
+                        laborHtml += '<tr class="analysis-spark-row"><td>走势</td>';
+                        laborHtml += '<td><span style="display:inline-flex;align-items:center;gap:3px;font-size:11px;"><span style="width:10px;height:2px;background:#5b9bd5;display:inline-block;"></span>考核</span><span style="display:inline-flex;align-items:center;gap:3px;font-size:11px;margin-left:6px;"><span style="width:10px;height:2px;background:#ed7d31;display:inline-block;"></span>计件</span></td>';
+                        laborHtml += '<td>' + sparkline2(aCount, pCount) + '</td>';
+                        laborHtml += '<td>' + sparkline2(aAmount, pAmount) + '</td>';
+                        laborHtml += '<td>' + sparkline2(aUnit, pUnit) + '</td>';
+                        laborHtml += '<td>' + sparkline2(aWage, pWage) + '</td>';
+                        laborHtml += '</tr>';
+                    }
                     laborHtml += '</tbody></table></div>';
 
-                    // 人工成本图表（方案A：4 张独立迷你图，各管自己的 y 轴，量纲不打架）
-                    laborHtml += '<div class="analysis-chart-wrap">';
-                    laborHtml += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px 16px;">';
-                    const labMiniDefs = [
-                        { id: 'analysis-labor-chart-count', title: '编制' },
-                        { id: 'analysis-labor-chart-amount', title: '总成本' },
-                        { id: 'analysis-labor-chart-unit', title: '单方成本' },
-                        { id: 'analysis-labor-chart-wage', title: '平均工资' }
-                    ];
-                    labMiniDefs.forEach(d => {
-                        laborHtml += '<div><div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:4px;">' + d.title + '</div>';
-                        laborHtml += '<div style="position:relative;height:150px;"><canvas id="' + d.id + '" role="img" aria-label="' + d.title + '月度趋势"></canvas></div></div>';
-                    });
-                    laborHtml += '</div></div>';
+                    // 人工成本走势已改为表格内 2 线 sparkline（见上方 走势行），下方不再单独画图
                     lEl.innerHTML = laborHtml;
 
-                    // 各参数合并值（考核+计件）
-                    const labLabels = months.map((m, i) => safeLabel(i));
-                    const ser = {
-                        '编制': months.map((m, i) => labRows[i].assess.count + labRows[i].piece.count),
-                        '总成本': months.map((m, i) => labRows[i].assess.amount + labRows[i].piece.amount),
-                        '单方成本': months.map((m, i) => { const wh = labRows[i].wh; return wh > 0 ? (labRows[i].assess.amount + labRows[i].piece.amount) / wh : 0; }),
-                        '平均工资': months.map((m, i) => { const c = labRows[i].assess.count + labRows[i].piece.count; return c > 0 ? (labRows[i].assess.amount + labRows[i].piece.amount) / c : 0; })
-                    };
-                    // 人工成本图表（方案A）：4 张独立迷你图，每张用各自真实量纲的 y 轴
-                    const labChartDefs = [
-                        { id: 'analysis-labor-chart-count', key: '编制', color: '#5b9bd5', yfmt: v => Math.round(v).toLocaleString('zh-CN') },
-                        { id: 'analysis-labor-chart-amount', key: '总成本', color: '#ed7d31', yfmt: v => (v / 10000).toFixed(1) + '万' },
-                        { id: 'analysis-labor-chart-unit', key: '单方成本', color: '#2e7d32', yfmt: v => v.toFixed(1) },
-                        { id: 'analysis-labor-chart-wage', key: '平均工资', color: '#9c27b0', yfmt: v => Math.round(v).toLocaleString('zh-CN') }
-                    ];
-                    labChartDefs.forEach(def => {
-                        const cv = document.getElementById(def.id);
-                        if (!cv) return;
-                        disposeAnalysisChart(def.id);
-                        _analysisCharts[def.id] = new Chart(cv, {
-                            type: 'line',
-                            data: { labels: labLabels, datasets: [{ label: def.key, data: ser[def.key], borderColor: def.color, backgroundColor: def.color, borderWidth: 2, pointRadius: 2.5, pointHoverRadius: 4, fill: false, tension: 0.2 }] },
-                            options: {
-                                responsive: true, maintainAspectRatio: false,
-                                plugins: {
-                                    legend: { display: false },
-                                    tooltip: { callbacks: { label: ctx => def.key + '：' + fmtMoney(ctx.parsed.y, ctx.parsed.y < 1000 ? 2 : 0) } }
-                                },
-                                scales: {
-                                    x: { grid: { display: false }, ticks: { autoSkip: false, maxRotation: 45, font: { size: 10 } } },
-                                    y: { ticks: { font: { size: 10 }, callback: function (v) { return def.yfmt(v); } }, grid: { color: 'rgba(0,0,0,0.05)' } }
-                                }
-                            }
-                        });
-                    });
                 }
             }
 
@@ -7941,7 +7932,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.294';
+        const APP_VERSION = 'v1.30.295';
 
         function forceRefresh() {
             if ('caches' in window) {
