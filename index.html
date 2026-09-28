@@ -2376,7 +2376,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.293</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.294</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -6047,7 +6047,10 @@
             // ===== 指标3：人工成本（考核工段/计件工段；双规格分行，下方复合图表） =====
             const lEl = document.getElementById('analysis-labor-table');
             if (lEl) {
-                disposeAnalysisChart('laborCost');
+                disposeAnalysisChart('laborCount');
+                disposeAnalysisChart('laborAmount');
+                disposeAnalysisChart('laborUnit');
+                disposeAnalysisChart('laborWage');
                 if (empty) {
                     lEl.innerHTML = '<div class="analysis-empty">暂无月份数据。</div>';
                 } else {
@@ -6077,8 +6080,20 @@
                     }
                     laborHtml += '</tbody></table></div>';
 
-                    // 人工成本复合图表：4 个参数（编制/总成本/单方成本/平均工资）按首月=100 指数化，统一展示变化趋势
-                    laborHtml += '<div class="analysis-chart-wrap"><canvas id="analysis-labor-cost-chart"></canvas></div>';
+                    // 人工成本图表（方案A：4 张独立迷你图，各管自己的 y 轴，量纲不打架）
+                    laborHtml += '<div class="analysis-chart-wrap">';
+                    laborHtml += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px 16px;">';
+                    const labMiniDefs = [
+                        { id: 'analysis-labor-chart-count', title: '编制' },
+                        { id: 'analysis-labor-chart-amount', title: '总成本' },
+                        { id: 'analysis-labor-chart-unit', title: '单方成本' },
+                        { id: 'analysis-labor-chart-wage', title: '平均工资' }
+                    ];
+                    labMiniDefs.forEach(d => {
+                        laborHtml += '<div><div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:4px;">' + d.title + '</div>';
+                        laborHtml += '<div style="position:relative;height:150px;"><canvas id="' + d.id + '" role="img" aria-label="' + d.title + '月度趋势"></canvas></div></div>';
+                    });
+                    laborHtml += '</div></div>';
                     lEl.innerHTML = laborHtml;
 
                     // 各参数合并值（考核+计件）
@@ -6089,45 +6104,33 @@
                         '单方成本': months.map((m, i) => { const wh = labRows[i].wh; return wh > 0 ? (labRows[i].assess.amount + labRows[i].piece.amount) / wh : 0; }),
                         '平均工资': months.map((m, i) => { const c = labRows[i].assess.count + labRows[i].piece.count; return c > 0 ? (labRows[i].assess.amount + labRows[i].piece.amount) / c : 0; })
                     };
-                    // 指数化（首月=100；首月为 0 时退化为全 0）
-                    const base = {}, idxSer = {};
-                    Object.keys(ser).forEach(k => {
-                        const b0 = ser[k][0];
-                        base[k] = b0;
-                        idxSer[k] = (b0 && b0 !== 0) ? ser[k].map(v => v / b0 * 100) : ser[k].map(() => 0);
-                    });
-                    const labColors = { '编制': '#5b9bd5', '总成本': '#ed7d31', '单方成本': '#2e7d32', '平均工资': '#9c27b0' };
-                    const labDatasets = Object.keys(ser).map(k => ({
-                        label: k, data: idxSer[k], borderColor: labColors[k], backgroundColor: labColors[k],
-                        borderWidth: 2.5, pointRadius: 3, pointHoverRadius: 5, fill: false, tension: 0.15, _raw: ser[k]
-                    }));
-                    const lctx = document.getElementById('analysis-labor-cost-chart');
-                    if (lctx) {
-                        _analysisCharts['laborCost'] = new Chart(lctx, {
+                    // 人工成本图表（方案A）：4 张独立迷你图，每张用各自真实量纲的 y 轴
+                    const labChartDefs = [
+                        { id: 'analysis-labor-chart-count', key: '编制', color: '#5b9bd5', yfmt: v => Math.round(v).toLocaleString('zh-CN') },
+                        { id: 'analysis-labor-chart-amount', key: '总成本', color: '#ed7d31', yfmt: v => (v / 10000).toFixed(1) + '万' },
+                        { id: 'analysis-labor-chart-unit', key: '单方成本', color: '#2e7d32', yfmt: v => v.toFixed(1) },
+                        { id: 'analysis-labor-chart-wage', key: '平均工资', color: '#9c27b0', yfmt: v => Math.round(v).toLocaleString('zh-CN') }
+                    ];
+                    labChartDefs.forEach(def => {
+                        const cv = document.getElementById(def.id);
+                        if (!cv) return;
+                        disposeAnalysisChart(def.id);
+                        _analysisCharts[def.id] = new Chart(cv, {
                             type: 'line',
-                            data: { labels: labLabels, datasets: labDatasets },
+                            data: { labels: labLabels, datasets: [{ label: def.key, data: ser[def.key], borderColor: def.color, backgroundColor: def.color, borderWidth: 2, pointRadius: 2.5, pointHoverRadius: 4, fill: false, tension: 0.2 }] },
                             options: {
                                 responsive: true, maintainAspectRatio: false,
-                                interaction: { mode: 'index', intersect: false },
                                 plugins: {
-                                    legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } },
-                                    tooltip: {
-                                        callbacks: {
-                                            label: function (ctx) {
-                                                const raw = ctx.dataset._raw ? ctx.dataset._raw[ctx.dataIndex] : null;
-                                                const idx = ctx.parsed && ctx.parsed.y != null ? ctx.parsed.y.toFixed(1) : '-';
-                                                return ctx.dataset.label + '：指数 ' + idx + (raw != null ? '（原值 ' + fmtMoney(raw, raw < 1000 ? 2 : 0) + '）' : '');
-                                            }
-                                        }
-                                    }
+                                    legend: { display: false },
+                                    tooltip: { callbacks: { label: ctx => def.key + '：' + fmtMoney(ctx.parsed.y, ctx.parsed.y < 1000 ? 2 : 0) } }
                                 },
                                 scales: {
-                                    x: { grid: { display: false } },
-                                    y: { title: { display: true, text: '指数(首月=100)', font: { size: 11 } }, ticks: { callback: function (v) { return v + ''; } } }
+                                    x: { grid: { display: false }, ticks: { autoSkip: false, maxRotation: 45, font: { size: 10 } } },
+                                    y: { ticks: { font: { size: 10 }, callback: function (v) { return def.yfmt(v); } }, grid: { color: 'rgba(0,0,0,0.05)' } }
                                 }
                             }
                         });
-                    }
+                    });
                 }
             }
 
@@ -7938,7 +7941,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.293';
+        const APP_VERSION = 'v1.30.294';
 
         function forceRefresh() {
             if ('caches' in window) {
