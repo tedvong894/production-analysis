@@ -2323,10 +2323,17 @@
             <div id="analysis-brief-deduction"></div>
         </div>
 
-        <!-- 指标3：经营利润 -->
+        <!-- 指标3：人工成本 -->
+        <div class="analysis-card" data-page-node-id="AnZ2b">
+            <div class="analysis-card-title"><span class="idx">3</span>人工成本</div>
+            <div id="analysis-labor-table"></div>
+            <div id="analysis-brief-labor"></div>
+        </div>
+
+        <!-- 指标4：经营利润 -->
         <div class="analysis-card" data-page-node-id="AnZ3">
             <div style="display:flex; align-items:center; justify-content:space-between;">
-                <div class="analysis-card-title" style="margin-bottom:0;"><span class="idx">3</span>经营成果</div>
+                <div class="analysis-card-title" style="margin-bottom:0;"><span class="idx">4</span>经营成果</div>
                 <div class="analysis-month-filter">
                     <label>本表月份</label>
                     <button type="button" id="analysis-profit-month-btn" class="analysis-month-btn" onclick="toggleProfitMonthMenu()">全部月份 ▾</button>
@@ -2369,7 +2376,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.291</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.292</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -2462,6 +2469,7 @@
         // 统一数字格式：普通数字保留1位小数，百分比保留2位小数
         function fmtNum(v) { return (Number(v) || 0).toFixed(1); }
         function fmtPct(v) { return (Number(v) || 0).toFixed(2) + '%'; }
+        function fmtMoney(v, d) { const n = Number(v) || 0; const dec = (d == null) ? 0 : d; return n.toLocaleString('zh-CN', { minimumFractionDigits: dec, maximumFractionDigits: dec }); }
         // 外贸产量质量「每日明细」数据字段保留4位小数（分数/比率列仍走 fmtPct 保留2位）
         // 保留原始小数位（最多 4 位），不补尾随 0：1 -> "1"，1.2345 -> "1.2345"
         function fmtNum4(v) {
@@ -6036,7 +6044,94 @@
                 }
             }
 
-            // ===== 指标3：经营成果（含可入库总产量/可实现总收入/EBITDA/DOL/考核利润/盈亏平衡点产量） =====
+            // ===== 指标3：人工成本（考核工段/计件工段；双规格分行，下方复合图表） =====
+            const lEl = document.getElementById('analysis-labor-table');
+            if (lEl) {
+                disposeAnalysisChart('laborCost');
+                if (empty) {
+                    lEl.innerHTML = '<div class="analysis-empty">暂无月份数据。</div>';
+                } else {
+                    // 每月取 考核工段/计件工段 两行（calcLaborCostRows 的 rows[0]/rows[1]）
+                    const labRows = months.map(m => {
+                        const lr = calcLaborCostRows(m.name);
+                        return { assess: lr.rows[0], piece: lr.rows[1], wh: lr.warehouseTotal };
+                    });
+                    let laborHtml = '<div class="analysis-sub-label">人工成本（考核工段 / 计件工段）</div>';
+                    laborHtml += '<div class="table-scroll"><table class="analysis-table center"><thead><tr><th>月份</th><th>工段</th><th>编制</th><th>总成本(元)</th><th>单方成本(元/方)</th><th>平均工资(元)</th></tr></thead><tbody>';
+                    months.forEach((m, i) => {
+                        const r = labRows[i];
+                        const isLatest = i === months.length - 1;
+                        laborHtml += '<tr' + (isLatest ? ' class="analysis-latest"' : '') + '>';
+                        laborHtml += '<td rowspan="2">' + safeLabel(i) + '</td>';
+                        laborHtml += '<td>考核工段</td><td>' + fmtNum(r.assess.count) + '</td><td>' + fmtMoney(r.assess.amount) + '</td><td>' + fmtMoney(r.assess.unitPrice, 2) + '</td><td>' + fmtMoney(r.assess.avgWage) + '</td></tr>';
+                        laborHtml += '<tr><td>计件工段</td><td>' + fmtNum(r.piece.count) + '</td><td>' + fmtMoney(r.piece.amount) + '</td><td>' + fmtMoney(r.piece.unitPrice, 2) + '</td><td>' + fmtMoney(r.piece.avgWage) + '</td></tr>';
+                    });
+                    // 均值行（分 考核/计件，对每个指标取跨月均值）
+                    if (months.length > 0) {
+                        const meanOf = key => arr => arr.reduce((a, b) => a + (b[key] || 0), 0) / arr.length;
+                        const mAssess = { count: meanOf('count')(labRows.map(r => r.assess)), amount: meanOf('amount')(labRows.map(r => r.assess)), unitPrice: meanOf('unitPrice')(labRows.map(r => r.assess)), avgWage: meanOf('avgWage')(labRows.map(r => r.assess)) };
+                        const mPiece = { count: meanOf('count')(labRows.map(r => r.piece)), amount: meanOf('amount')(labRows.map(r => r.piece)), unitPrice: meanOf('unitPrice')(labRows.map(r => r.piece)), avgWage: meanOf('avgWage')(labRows.map(r => r.piece)) };
+                        laborHtml += '<tr class="analysis-total avg-row">';
+                        laborHtml += '<td rowspan="2">均值</td><td>考核工段</td><td>' + fmtNum(mAssess.count) + '</td><td>' + fmtMoney(mAssess.amount) + '</td><td>' + fmtMoney(mAssess.unitPrice, 2) + '</td><td>' + fmtMoney(mAssess.avgWage) + '</td></tr>';
+                        laborHtml += '<tr class="analysis-total avg-row"><td>计件工段</td><td>' + fmtNum(mPiece.count) + '</td><td>' + fmtMoney(mPiece.amount) + '</td><td>' + fmtMoney(mPiece.unitPrice, 2) + '</td><td>' + fmtMoney(mPiece.avgWage) + '</td></tr>';
+                    }
+                    laborHtml += '</tbody></table></div>';
+
+                    // 人工成本复合图表：4 个参数（编制/总成本/单方成本/平均工资）按首月=100 指数化，统一展示变化趋势
+                    laborHtml += '<div class="analysis-chart-wrap"><canvas id="analysis-labor-cost-chart"></canvas></div>';
+                    lEl.innerHTML = laborHtml;
+
+                    // 各参数合并值（考核+计件）
+                    const labLabels = months.map((m, i) => safeLabel(i));
+                    const ser = {
+                        '编制': months.map((m, i) => labRows[i].assess.count + labRows[i].piece.count),
+                        '总成本': months.map((m, i) => labRows[i].assess.amount + labRows[i].piece.amount),
+                        '单方成本': months.map((m, i) => { const wh = labRows[i].wh; return wh > 0 ? (labRows[i].assess.amount + labRows[i].piece.amount) / wh : 0; }),
+                        '平均工资': months.map((m, i) => { const c = labRows[i].assess.count + labRows[i].piece.count; return c > 0 ? (labRows[i].assess.amount + labRows[i].piece.amount) / c : 0; })
+                    };
+                    // 指数化（首月=100；首月为 0 时退化为全 0）
+                    const base = {}, idxSer = {};
+                    Object.keys(ser).forEach(k => {
+                        const b0 = ser[k][0];
+                        base[k] = b0;
+                        idxSer[k] = (b0 && b0 !== 0) ? ser[k].map(v => v / b0 * 100) : ser[k].map(() => 0);
+                    });
+                    const labColors = { '编制': '#5b9bd5', '总成本': '#ed7d31', '单方成本': '#2e7d32', '平均工资': '#9c27b0' };
+                    const labDatasets = Object.keys(ser).map(k => ({
+                        label: k, data: idxSer[k], borderColor: labColors[k], backgroundColor: labColors[k],
+                        borderWidth: 2.5, pointRadius: 3, pointHoverRadius: 5, fill: false, tension: 0.15, _raw: ser[k]
+                    }));
+                    const lctx = document.getElementById('analysis-labor-cost-chart');
+                    if (lctx) {
+                        _analysisCharts['laborCost'] = new Chart(lctx, {
+                            type: 'line',
+                            data: { labels: labLabels, datasets: labDatasets },
+                            options: {
+                                responsive: true, maintainAspectRatio: false,
+                                interaction: { mode: 'index', intersect: false },
+                                plugins: {
+                                    legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } },
+                                    tooltip: {
+                                        callbacks: {
+                                            label: function (ctx) {
+                                                const raw = ctx.dataset._raw ? ctx.dataset._raw[ctx.dataIndex] : null;
+                                                const idx = ctx.parsed && ctx.parsed.y != null ? ctx.parsed.y.toFixed(1) : '-';
+                                                return ctx.dataset.label + '：指数 ' + idx + (raw != null ? '（原值 ' + fmtMoney(raw, raw < 1000 ? 2 : 0) + '）' : '');
+                                            }
+                                        }
+                                    }
+                                },
+                                scales: {
+                                    x: { grid: { display: false } },
+                                    y: { title: { display: true, text: '指数(首月=100)', font: { size: 11 } }, ticks: { callback: function (v) { return v + ''; } } }
+                                }
+                            }
+                        });
+                    }
+                }
+            }
+
+            // ===== 指标4：经营成果（含可入库总产量/可实现总收入/EBITDA/DOL/考核利润/盈亏平衡点产量） =====
             const pEl = document.getElementById('analysis-profit-table');
             if (pEl) {
                 if (empty || profitMonths.length === 0) {
@@ -6148,6 +6243,7 @@
             mountBriefAnalysis('analysis-brief-yield', BA_ANALYSIS_KEYS.yield);
             mountBriefAnalysis('analysis-brief-deduction', BA_ANALYSIS_KEYS.deduction);
             mountBriefAnalysis('analysis-brief-profit', BA_ANALYSIS_KEYS.profit);
+            mountBriefAnalysis('analysis-brief-labor', BA_ANALYSIS_KEYS.labor);
         }
 
         // ============ 月度分析（未完成月份的月度内数据分析） ============
@@ -6465,7 +6561,8 @@
         const BA_ANALYSIS_KEYS = {
             yield: 'brief_analysis_yield',
             deduction: 'brief_analysis_deduction',
-            profit: 'brief_analysis_profit'
+            profit: 'brief_analysis_profit',
+            labor: 'brief_analysis_labor'
         };
         function loadBriefAnalysis(key) {
             try { return localStorage.getItem(key) || ''; } catch (e) { return ''; }
@@ -7841,7 +7938,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.291';
+        const APP_VERSION = 'v1.30.292';
 
         function forceRefresh() {
             if ('caches' in window) {
