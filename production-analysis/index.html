@@ -481,7 +481,7 @@
         input[type="number"].monthly-input:focus {
             background: #f0f7ff;
         }
-        span.phase-total-auto { display:inline-block; min-width:78px; text-align:center; color:#555; font-variant-numeric:tabular-nums; }
+        input[type="number"].phase-total-input { min-width:78px; text-align:center; color:#4a5568; font-variant-numeric:tabular-nums; }
         /* 月度数据·工段质量扣款「数据」按钮（自动导入 / 手动输入 合二为一）+ 下拉菜单 */
         .deduction-data-wrap { position: relative; display: inline-flex; }
         .deduction-data-btn {
@@ -2361,7 +2361,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.302</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.303</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -2420,7 +2420,6 @@
         let monthlyData = { months: [], currentMonth: null };
         let yieldData = { months: {}, currentMonth: null };
         let editingId = null;
-        let monthlyPhaseSel = '2';
         const MONTHLY_COLS = ['50板', '75板', '国内板', '砌块'];
         // v1.30.220：新增「下线量」行（外部数据，仅由月度数据区手工/批量导入，位于「分拣量」上方，不参与任何公式计算）
         const MONTHLY_ROWS = ['下线量', '产量', '合格', '修补', '不良'];
@@ -2592,6 +2591,7 @@
             const saved = localStorage.getItem(MONTHLY_KEY);
             if (saved) {
                 monthlyData = JSON.parse(saved);
+                migratePhasesRescue(); // v1.30.303：救援旬视图误存数据并清除 phases（幂等）
                 // 兼容旧数据：补全工段质量扣款字段
                 monthlyData.months.forEach(m => {
                     if (!m.data.deptDeduction) {
@@ -2987,8 +2987,7 @@
             }
             if (!monthRecord.laborCost) monthRecord.laborCost = createEmptyLaborCost();
             ensureQualifiedRow(monthRecord);
-            ensurePhases(monthRecord);
-            const pd = (monthlyPhaseSel === '2') ? monthRecord.data : (monthRecord.phases[monthlyPhaseSel] || createEmptyMonthData());
+            const pd = monthRecord.data;
 
             // 同步外贸产量质量模块的 50板/75板 累计数据（同月份）
             const yieldSynced = syncYieldToMonthly(monthName);
@@ -3055,7 +3054,6 @@
                             <!-- 顶部统计：历史过去月只显示可入库总产量，当前/未来月保留预估卡 -->
                             ${monthlyAnomalyHtml(monthName, monthRecord.data)}
                             ${statsBarHtml}
-                            ${phaseSelHtml(monthlyPhaseSel)}
                             <div class="monthly-main-table-wrapper">
                                 <table class="monthly-main-table">
                                     <thead>
@@ -3069,8 +3067,10 @@
                                             <td>${monthlyRowLabel(row)}</td>
                                             ${MONTHLY_COLS.map(col => {
                                                 if (isAuto) {
-                                                    const defect = Math.round(((parseFloat(pd['产量']?.[col]) || 0) - (parseFloat(pd['合格']?.[col]) || 0) - (parseFloat(pd['修补']?.[col]) || 0)) * 10) / 10;
-                                                    return `<td class="right"><input type="number" id="cur-不良-${col}" value="${fmtNum(defect)}" class="monthly-input" readonly title="自动计算：不良 = 分拣量 − 合格 − 修补"></td>`;
+                                                    const defect = isYieldLinkedCol(col)
+                                                        ? Math.round((getYieldSpecSummary(monthName, col)['不良'] || 0) * 10) / 10
+                                                        : Math.round(((parseFloat(pd['产量']?.[col]) || 0) - (parseFloat(pd['合格']?.[col]) || 0) - (parseFloat(pd['修补']?.[col]) || 0)) * 10) / 10;
+                                                    return `<td class="right"><input type="number" id="cur-不良-${col}" value="${fmtNum(defect)}" class="monthly-input" readonly title="${isYieldLinkedCol(col) ? '外贸产量质量模块自动带入（只读）' : '自动计算：不良 = 分拣量 − 合格 − 修补'}"></td>`;
                                                 }
                                                 // 下线量为外部导入数据，不参与外贸联动
                                                 const linked = row !== '下线量' && isYieldLinkedCol(col);
@@ -5586,25 +5586,6 @@
                 return sum + safeGood(y, d);
             }, 0);
         }
-        // 国内板/砌块 某旬实际可入库：月度表 phases 累计值相邻差分。cum[idx] 缺失返回 null（该旬无数据）。
-        function getDomesticPhaseActual(monthName, phaseIdx) {
-            const rec = findMonthlyRecord(monthName);
-            if (!rec || !rec.phases) return null;
-            const cum = (idx) => {
-                if (idx < 0) return null;
-                const p = (idx === 2) ? rec.data : rec.phases[String(idx)]; // 下旬累计=月度合计(data)本身
-                if (!p || !p['产量']) return null;
-                const y = (parseFloat(p['产量']['国内板']) || 0) + (parseFloat(p['产量']['砌块']) || 0);
-                const d = (parseFloat(p['不良']['国内板']) || 0) + (parseFloat(p['不良']['砌块']) || 0);
-                return { y, d };
-            };
-            const cur = cum(phaseIdx);
-            if (cur === null) return null;
-            const prev = cum(phaseIdx - 1);
-            const yy = Math.max(0, cur.y - (prev ? prev.y : 0));
-            const dd = Math.max(0, cur.d - (prev ? prev.d : 0));
-            return Math.max(0, safeGood(yy, dd));
-        }
 
         // 单月各工段最高工资（与人工成本页「工段工资预测」口径一致）
         // 与「工段工资预测」完全一致的单工段最高工资计算（不做 Math.max(0,..) 截断，负值照实返回，与工资预测显示一致）
@@ -6498,7 +6479,7 @@
         // ===== 指标2：阶段比较（行=上旬/中旬/下旬，仅显示已有数据的阶段） =====
         // 说明：① 每日明细仅含外贸规格（50板/75板）；② 黄色修正数据条（同日第3条起）计入本表（v1.30.274）；
         //       ③ 无数据的阶段（如下旬未到/未录）整行不出现，录入后自动出现；
-        //       ④ v1.30.301：可入库总方量(方)=国内板/砌块，上旬手动、中旬=月度总和−上旬、下旬=月度总和−上旬−中旬 自动算（不分摊）；外贸占比=外贸可入库/(外贸+国内板/砌块)。
+        //       ④ v1.30.303：可入库总方量(方)=国内板/砌块，三旬均为手动输入（存 yieldData.months[yk].phaseTotals）；外贸占比=外贸可入库/(外贸+国内板/砌块)。
         function renderPhaseComparison() {
             const tEl = document.getElementById('manalysis-phase-table');
             if (!tEl) return;
@@ -6511,8 +6492,13 @@
                 tEl.innerHTML = '<div class="analysis-empty">' + emptyTip + '</div>';
                 return;
             }
-            // 国内板/砌块 各旬实际可入库：由月度数据表 phases 累计值相邻差分（上旬=累计上旬；中旬=累计中旬−累计上旬；下旬=累计下旬−累计中旬）
-            const domestic = [0, 1, 2].map(i => getDomesticPhaseActual(monthName, i));
+            // 国内板/砌块 各旬可入库总方量：手动输入（存于 yieldData.months[yk].phaseTotals，未录入=null）
+            const ykPT = findYieldMonthKey(monthName);
+            const phaseTotals = (ykPT && yieldData.months[ykPT] && yieldData.months[ykPT].phaseTotals) || {};
+            const domestic = [0, 1, 2].map(i => {
+                const v = parseFloat(phaseTotals[String(i)]);
+                return isNaN(v) ? null : v;
+            });
             const phaseRecs = [[], [], []];
             allRecs.forEach(r => phaseRecs[manalysisPhaseOf(r.date)].push(r));
             const rows = [];
@@ -6529,25 +6515,23 @@
                     sortQty: (1 - dRate) > 0 ? warehouse / (1 - dRate) : null,
                     warehouse,
                     total,
-                    ratio: (warehouse + total) > 0 ? warehouse / (warehouse + total) * 100 : null,
+                    ratio: (total !== null && (warehouse + total) > 0) ? warehouse / (warehouse + total) * 100 : null,
                     qual: s.产量 > 0 ? (s.产量 - s.不良 - s.修补) / s.产量 * 100 : 0,
                     repairRate: s.产量 > 0 ? s.修补 / s.产量 * 100 : 0,
                     defectRate: s.产量 > 0 ? s.不良 / s.产量 * 100 : 0
                 });
             });
-            let h = '<div class="table-scroll"><table class="analysis-table center"><thead><tr><th>阶段</th><th style="width:120px;" title="国内板/砌块 可入库：由月度数据表各旬累计值差分得出（上旬=累计上旬；中旬=累计中旬−累计上旬；下旬=累计下旬−累计中旬），只读">可入库总方量(方)</th><th>外贸分拣量(方)</th><th>外贸可入库产量(方)</th><th>外贸占比(%)</th><th>合格率(%)</th><th>修补率(%)</th><th>不良率(%)</th></tr></thead><tbody>';
+            let h = '<div class="table-scroll"><table class="analysis-table center"><thead><tr><th>阶段</th><th style="width:120px;" title="手动输入该旬国内板/砌块可入库总方量">可入库总方量(方)</th><th>外贸分拣量(方)</th><th>外贸可入库产量(方)</th><th>外贸占比(%)</th><th>合格率(%)</th><th>修补率(%)</th><th>不良率(%)</th></tr></thead><tbody>';
             rows.forEach(r0 => {
-                // 上旬(0)：国内板/砌块 手动输入；中旬(1)/下旬(2)：自动=月度总和−累计（只读）
-                const totalCell = r0.total === null
-                    ? `<span class="phase-total-auto" title="该旬无国内板/砌块累计数据">—</span>`
-                    : `<span class="phase-total-auto" title="月度数据表各旬累计差分得出">${fmtNum(r0.total)}</span>`;
+                // 可入库总方量：三旬均手动输入（清空=未录入，外贸占比显示 —）
+                const totalCell = `<input type="number" class="monthly-input phase-total-input" min="0" step="0.1" value="${r0.total === null ? '' : r0.total}" onchange="onPhaseTotalEdit(${r0.i}, this.value)" title="手动输入该旬国内板/砌块可入库总方量">`;
                 h += `<tr><td>${r0.label}</td>`
                     + `<td>${totalCell}</td>`
                     + `<td>${r0.sortQty === null ? '—' : fmtNum(r0.sortQty)}</td><td>${fmtNum(r0.warehouse)}</td>`
                     + `<td class="right" id="phase-ratio-${r0.i}">${r0.ratio === null ? '—' : fmtPct(r0.ratio)}</td>`
                     + `<td>${fmtPct(r0.qual)}</td><td>${fmtPct(r0.repairRate)}</td><td>${fmtPct(r0.defectRate)}</td></tr>`;
             });
-            // 合计行：国内板/砌块=三阶段之和（≈月度总和，中旬/下旬自动）；外贸占比=外贸可入库/(外贸+国内板/砌块)
+            // 合计行：国内板/砌块=三旬手动值之和；外贸占比=外贸可入库/(外贸+国内板/砌块)
             const tSum = manalysisSum(allRecs, null);
             const tWh = safeGood(tSum.产量, tSum.不良);
             const tDRate = tSum.产量 > 0 ? tSum.不良 / tSum.产量 : 0;
@@ -6557,6 +6541,19 @@
             h += `<tr class="analysis-total"><td>合计</td><td id="phase-total-sum">${fmtNum(tTotal)}</td><td>${tSort === null ? '—' : fmtNum(tSort)}</td><td>${fmtNum(tWh)}</td><td id="phase-ratio-sum">${tGrand > 0 ? fmtPct(tWh / tGrand * 100) : '—'}</td><td>${fmtPct(tSum.产量 > 0 ? (tSum.产量 - tSum.不良 - tSum.修补) / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.修补 / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.不良 / tSum.产量 * 100 : 0)}</td></tr>`;
             h += '</tbody></table></div>';
             tEl.innerHTML = h;
+        }
+
+        // 阶段比较「可入库总方量」手动输入：存 yieldData.months[yk].phaseTotals['0'/'1'/'2']（清空=删除）
+        function onPhaseTotalEdit(i, val) {
+            const { monthName } = getManalysisRecords();
+            const yk = findYieldMonthKey(monthName);
+            if (!yk || !yieldData.months[yk]) return;
+            if (!yieldData.months[yk].phaseTotals) yieldData.months[yk].phaseTotals = {};
+            const t = String(val).trim();
+            if (t === '' || isNaN(parseFloat(t))) delete yieldData.months[yk].phaseTotals[String(i)];
+            else yieldData.months[yk].phaseTotals[String(i)] = Math.round(parseFloat(t) * 10) / 10;
+            saveYield();
+            renderPhaseComparison();
         }
 
         // ============ 简要分析（可折叠 / 可编辑） ============
@@ -7034,14 +7031,14 @@
         function recalcDefect() {
             const rec = monthlyData.months.find(m => m.name === monthlyData.currentMonth);
             MONTHLY_COLS.forEach(col => {
+                if (isYieldLinkedCol(col)) return; // 50板/75板：产量/合格/修补/不良 随外贸产量质量模块同步带入，不走本地差值
                 const 产量 = parseFloat(document.getElementById('cur-产量-' + col)?.value) || 0;
                 const 合格 = parseFloat(document.getElementById('cur-合格-' + col)?.value) || 0;
                 const 修补 = parseFloat(document.getElementById('cur-修补-' + col)?.value) || 0;
                 const defect = Math.round((产量 - 合格 - 修补) * 10) / 10;
                 const el = document.getElementById('cur-不良-' + col);
                 if (el) el.value = fmtNum(defect);
-                const _snap = (rec.phases && monthlyPhaseSel !== '2') ? (rec.phases[monthlyPhaseSel] || (rec.phases[monthlyPhaseSel] = createEmptyMonthData())) : rec.data;
-            if (rec && _snap && _snap['不良']) _snap['不良'][col] = defect;
+                if (rec && rec.data && rec.data['不良']) rec.data['不良'][col] = defect;
             });
             updateDeductionDisplay();
             updateRowTotals();
@@ -7849,24 +7846,19 @@
             return d;
         }
 
-        function ensurePhases(rec) {
-            if (!rec) return;
-            if (!rec.phases) rec.phases = { '0': null, '1': null, '2': null };
-            if (!rec.phases['2'] && rec.data) rec.phases['2'] = JSON.parse(JSON.stringify(rec.data));
-        }
-        function setMonthlyPhase(idx) {
-            monthlyPhaseSel = String(idx);
-            renderMonthly();
-        }
-        function phaseSelHtml(sel) {
-            const names = ['上旬', '中旬', '下旬'];
-            return '<div style="display:flex;gap:6px;align-items:center;margin:6px 0 2px;">'
-                + names.map((n, i) => {
-                    const active = String(i) === sel;
-                    const st = active ? 'background:#7b8fe0;color:#fff;border-color:#7b8fe0;' : '';
-                    return '<button type="button" class="btn btn-save" style="font-size:12px;padding:4px 12px;' + st + '" onclick="setMonthlyPhase(' + i + ')" title="录入该旬累计值（app 自动差分得各旬实际）">' + n + '</button>';
-                }).join('')
-                + '<span style="color:#888;font-size:12px;margin-left:8px;">录入累计值，app 按相邻旬差分得各旬实际</span></div>';
+        // v1.30.303 一次性救援：v1.30.302 旬视图下误存入 phases['0'/'1'] 的手动数据，在 data 为空时回填，随后清除 phases
+        function migratePhasesRescue() {
+            if (!monthlyData || !Array.isArray(monthlyData.months)) return;
+            monthlyData.months.forEach(rec => {
+                if (!rec || !rec.phases || !rec.data) { if (rec) delete rec.phases; return; }
+                const snapEmpty = (p) => !p || !MONTHLY_ROWS.some(row => MONTHLY_COLS.some(col => Math.abs(parseFloat(p[row]?.[col]) || 0) > 1e-9));
+                const ddHas = rec.data.deptDeduction && Object.values(rec.data.deptDeduction).some(v => Math.abs(parseFloat(v) || 0) > 1e-9);
+                if (!snapEmpty(rec.data) || ddHas) { delete rec.phases; return; }
+                const cand = (rec.phases['1'] && !snapEmpty(rec.phases['1'])) ? rec.phases['1']
+                    : ((rec.phases['0'] && !snapEmpty(rec.phases['0'])) ? rec.phases['0'] : null);
+                if (cand) rec.data = JSON.parse(JSON.stringify(cand));
+                delete rec.phases;
+            });
         }
         function createEmptyLaborCost() {
             return {
@@ -7918,25 +7910,23 @@
             // 兼容旧数据
             if (!record.data.deptDeduction) record.data.deptDeduction = {};
             if (!record.laborCost) record.laborCost = createEmptyLaborCost();
-            ensurePhases(record);
-            const _sel = monthlyPhaseSel;
-            const _snap = (_sel === '2') ? record.data : (record.phases[_sel] || (record.phases[_sel] = createEmptyMonthData()));
             MONTHLY_ROWS.forEach(row => {
                 MONTHLY_COLS.forEach(col => {
                     const el = document.getElementById(`cur-${row}-${col}`);
                     const v = el ? (parseFloat(el.value) || 0) : 0;
                     if (row === '不良') {
-                        _snap[row][col] = v;
-                        if (_sel === '2') record.data[row][col] = v;
+                        // 50板/75板：不良随外贸产量质量模块同步带入；国内板/砌块：自动生成（产量−合格−修补），不能忽略
+                        record.data[row][col] = isYieldLinkedCol(col)
+                            ? Math.round((getYieldSpecSummary(monthName, col)['不良'] || 0) * 10) / 10
+                            : v;
                         return;
                     }
                     if (isYieldLinkedCol(col) && row !== '下线量') {
-                        // 外贸自动带入：仅写入 data（月度合计/下旬），不写 phases
+                        // 外贸自动带入始终优先，手动录入的 50板/75板 产量质量数据自动忽略
                         record.data[row][col] = Math.round((getYieldSpecSummary(monthName, col)[row] || 0) * 10) / 10;
                         return;
                     }
-                    _snap[row][col] = v;
-                    if (_sel === '2') record.data[row][col] = v;
+                    record.data[row][col] = v;
                 });
             });
             DEPT_NAMES.forEach(name => {
@@ -7961,7 +7951,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.302';
+        const APP_VERSION = 'v1.30.303';
 
         function forceRefresh() {
             if ('caches' in window) {
