@@ -2376,7 +2376,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.297</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.298</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -6135,7 +6135,7 @@
                 }
             }
 
-            // ===== 指标4：经营成果（含可入库总产量/可实现总收入/EBITDA/DOL/考核利润/盈亏平衡点产量） =====
+            // ===== 指标4：经营成果（含可入库总产量/可实现总收入/DOL/盈亏平衡点产量/息税折旧前利润(EBITDA)/考核利润/盈亏平衡点产量（考核）） =====
             const pEl = document.getElementById('analysis-profit-table');
             if (pEl) {
                 if (empty || profitMonths.length === 0) {
@@ -6177,9 +6177,9 @@
                         if (!denom) return '—';
                         return (cm / denom).toFixed(2);
                     };
-                    let h = '<div class="table-scroll"><table class="analysis-table wide center profit-tbl"><thead><tr><th>月份</th><th>可入库总产量</th><th>可实现总收入</th><th>EBITDA</th><th>DOL</th><th>盈亏平衡点产量</th><th>考核利润</th><th>盈亏平衡点产量（考核）</th></tr></thead><tbody>';
+                    let h = '<div class="table-scroll"><table class="analysis-table wide center profit-tbl"><thead><tr><th>月份</th><th>可入库总产量</th><th>可实现总收入</th><th>DOL</th><th>盈亏平衡点产量</th><th>息税折旧前利润</th><th>考核利润</th><th>盈亏平衡点产量（考核）</th></tr></thead><tbody>';
                     pStats.forEach((p, i) => {
-                        h += `<tr${i === pStats.length - 1 ? ' class="analysis-latest"' : ''}><td>${safeProfitLabel(i)}</td><td>${fmtNum(p.warehouse)}</td><td>${toWan(p.realizableRevenue)}</td><td>${toWan(p.ebit)}</td><td>${dolFmt(p.contributionMargin, p.fixedCost)}</td><td>${bepFmt(p.warehouse, p.contributionMargin, p.fixedCost)}</td><td>${toWan(p.assessProfit)}</td><td>${bepKFmt(p.warehouse, p.contributionMargin, p.fixedCost + (p.fundCost || 0))}</td></tr>`;
+                        h += `<tr${i === pStats.length - 1 ? ' class="analysis-latest"' : ''}><td>${safeProfitLabel(i)}</td><td>${fmtNum(p.warehouse)}</td><td>${toWan(p.realizableRevenue)}</td><td>${dolFmt(p.contributionMargin, p.fixedCost)}</td><td>${bepFmt(p.warehouse, p.contributionMargin, p.fixedCost)}</td><td>${toWan(p.ebit)}</td><td>${toWan(p.assessProfit)}</td><td>${bepKFmt(p.warehouse, p.contributionMargin, p.fixedCost + (p.fundCost || 0))}</td></tr>`;
                     });
                     const n = pStats.length;
                     const avg = arr => n ? arr.reduce((s, v) => s + v, 0) / n : 0;
@@ -6207,7 +6207,7 @@
                     }).filter(v => v !== null);
                     const avgBepKNum = bepKVals.length ? bepKVals.reduce((s, v) => s + v, 0) / bepKVals.length : 0;
                     const avgBepK = bepKVals.length ? fmtNum(avgBepKNum) : '—';
-                    h += `<tr class="analysis-total avg-row"><td>均值</td><td>${fmtNum(avgWarehouse)}</td><td>${toWan(avgRevenue)}</td><td>${toWan(avgEbit)}</td><td>${avgDol}</td><td>${avgBep}</td><td>${toWan(avgAssess)}</td><td>${avgBepK}</td></tr>`;
+                    h += `<tr class="analysis-total avg-row"><td>均值</td><td>${fmtNum(avgWarehouse)}</td><td>${toWan(avgRevenue)}</td><td>${avgDol}</td><td>${avgBep}</td><td>${toWan(avgEbit)}</td><td>${toWan(avgAssess)}</td><td>${avgBepK}</td></tr>`;
                     // 走势行：每列一条折线迷你图，基准线＝该列均值（与「均值」行口径一致）
                     if (n >= 2) {
                         const dolSparkVals = pStats.map(p => {
@@ -6219,9 +6219,9 @@
                         const sparkCols = [
                             { vals: pStats.map(p => p.warehouse), base: avgWarehouse },
                             { vals: pStats.map(p => p.realizableRevenue), base: avgRevenue },
-                            { vals: pStats.map(p => p.ebit), base: avgEbit },
                             { vals: dolSparkVals, base: avgDolNum },
                             { vals: bepSparkVals, base: avgBepNum },
+                            { vals: pStats.map(p => p.ebit), base: avgEbit },
                             { vals: pStats.map(p => p.assessProfit), base: avgAssess },
                             { vals: bepKSparkVals, base: avgBepKNum }
                         ];
@@ -6238,7 +6238,7 @@
                     const cumCM = sum(pStats.map(p => p.contributionMargin));
                     const cumFC = sum(pStats.map(p => p.fixedCost));
                     const cumFund = sum(pStats.map(p => p.fundCost || 0));
-                    h += `<tr class="analysis-total cum-row"><td>累计</td><td>${fmtNum(cumWarehouse)}</td><td>${toWan(cumRevenue)}</td><td>${toWan(cumEbit)}</td><td>${dolFmt(cumCM, cumFC)}</td><td>${bepFmt(cumWarehouse, cumCM, cumFC)}</td><td>${toWan(cumAssess)}</td><td>${bepKFmt(cumWarehouse, cumCM, cumFC + cumFund)}</td></tr>`;
+                    h += `<tr class="analysis-total cum-row"><td>累计</td><td>${fmtNum(cumWarehouse)}</td><td>${toWan(cumRevenue)}</td><td>${dolFmt(cumCM, cumFC)}</td><td>${bepFmt(cumWarehouse, cumCM, cumFC)}</td><td>${toWan(cumEbit)}</td><td>${toWan(cumAssess)}</td><td>${bepKFmt(cumWarehouse, cumCM, cumFC + cumFund)}</td></tr>`;
                     h += '</tbody></table></div>';
                     pEl.innerHTML = h;
                 }
@@ -7942,7 +7942,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.297';
+        const APP_VERSION = 'v1.30.298';
 
         function forceRefresh() {
             if ('caches' in window) {
