@@ -2361,7 +2361,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.305</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.306</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -3067,13 +3067,13 @@
                                             <td>${monthlyRowLabel(row)}</td>
                                             ${MONTHLY_COLS.map(col => {
                                                 if (isAuto) {
-                                                    const defect = isYieldLinkedCol(col)
+                                                    const defect = (isYieldLinkedCol(col) && hasYieldDetail(monthName))
                                                         ? Math.round((getYieldSpecSummary(monthName, col)['不良'] || 0) * 10) / 10
                                                         : Math.round(((parseFloat(pd['产量']?.[col]) || 0) - (parseFloat(pd['合格']?.[col]) || 0) - (parseFloat(pd['修补']?.[col]) || 0)) * 10) / 10;
-                                                    return `<td class="right"><input type="number" id="cur-不良-${col}" value="${fmtNum(defect)}" class="monthly-input" readonly title="${isYieldLinkedCol(col) ? '外贸产量质量模块自动带入（只读）' : '自动计算：不良 = 分拣量 − 合格 − 修补'}"></td>`;
+                                                    return `<td class="right"><input type="number" id="cur-不良-${col}" value="${fmtNum(defect)}" class="monthly-input" readonly title="${(isYieldLinkedCol(col) && hasYieldDetail(monthName)) ? '外贸产量质量模块自动带入（只读）' : '自动计算：不良 = 分拣量 − 合格 − 修补'}"></td>`;
                                                 }
                                                 // 下线量为外部导入数据，不参与外贸联动
-                                                const linked = row !== '下线量' && isYieldLinkedCol(col);
+                                                const linked = row !== '下线量' && isYieldLinkedCol(col) && hasYieldDetail(monthName);
                                                 let linkedVal = 0;
                                                 if (linked) {
                                                     linkedVal = getYieldSpecSummary(monthName, col)[row] || 0;
@@ -3869,6 +3869,13 @@
         function isYieldLinkedCol(col) {
             return YIELD_LINKED_COLS.includes(col);
         }
+        // 该月份是否存在外贸产量质量明细（50板/75板 每日明细记录）
+        // 无明细 → 月度数据模块 50板/75板 恢复手动输入（接受粘贴/批量导入）；有明细 → 外贸导入优先，手动忽略
+        function hasYieldDetail(monthName) {
+            const yk = findYieldMonthKey(monthName);
+            const recs = (yk && yieldData.months[yk] && yieldData.months[yk].records) || [];
+            return recs.some(r => r.spec === '50板' || r.spec === '75板');
+        }
 
         // 月度数据主表表头：统一显示规格名，不再加（自动）标签
         function fmtMonthlyColHeader(col) {
@@ -3879,6 +3886,7 @@
         function syncYieldToMonthly(monthName) {
             const record = findMonthlyRecord(monthName);
             if (!record) return false;
+            if (!hasYieldDetail(monthName)) return false; // 无外贸明细：不覆盖，月度模块手动输入有效
             let changed = false;
             YIELD_LINKED_COLS.forEach(col => {
                 const s = getYieldSpecSummary(monthName, col);
@@ -7031,7 +7039,7 @@
         function recalcDefect() {
             const rec = monthlyData.months.find(m => m.name === monthlyData.currentMonth);
             MONTHLY_COLS.forEach(col => {
-                if (isYieldLinkedCol(col)) return; // 50板/75板：产量/合格/修补/不良 随外贸产量质量模块同步带入，不走本地差值
+                if (isYieldLinkedCol(col) && hasYieldDetail(monthlyData.currentMonth)) return; // 50板/75板：有外贸明细时同步带入不走本地差值；无明细则手动输入并自动生成不良
                 const 产量 = parseFloat(document.getElementById('cur-产量-' + col)?.value) || 0;
                 const 合格 = parseFloat(document.getElementById('cur-合格-' + col)?.value) || 0;
                 const 修补 = parseFloat(document.getElementById('cur-修补-' + col)?.value) || 0;
@@ -7567,8 +7575,8 @@
                     const colIdx = startColIdx + cIdx;
                     if (colIdx >= MONTHLY_COLS.length) return;
                     const col = MONTHLY_COLS[colIdx];
-                    // 50板/75板 的 产量/合格/修补 为外贸自动带入（只读），粘贴跳过（不覆盖自动值）
-                    if (isYieldLinkedCol(col) && MONTHLY_ROWS[rowIdx] !== '下线量') return;
+                    // 50板/75板 的 产量/合格/修补 为外贸自动带入（只读），粘贴跳过（不覆盖自动值）；无外贸明细的月份接受粘贴
+                    if (isYieldLinkedCol(col) && hasYieldDetail(monthlyData.currentMonth) && MONTHLY_ROWS[rowIdx] !== '下线量') return;
                     const el = document.getElementById(`cur-${MONTHLY_ROWS[rowIdx]}-${col}`);
                     if (el) {
                         const num = parseFloat(String(val).trim().replace(/,/g, ''));
@@ -7729,8 +7737,8 @@
                     cols.forEach((val, cIdx) => {
                         if (cIdx >= MONTHLY_COLS.length) return;
                         const col = MONTHLY_COLS[cIdx];
-                        // 50板/75板 的 产量/合格/修补 为外贸自动带入（只读），批量导入跳过（不写输入框、不覆盖自动值）
-                        if (isYieldLinkedCol(col) && row !== '下线量') return;
+                        // 50板/75板 的 产量/合格/修补 为外贸自动带入（只读），批量导入跳过（不写输入框、不覆盖自动值）；无外贸明细的月份接受批量导入
+                        if (isYieldLinkedCol(col) && hasYieldDetail(monthlyData.currentMonth) && row !== '下线量') return;
                         const el = document.getElementById(`cur-${row}-${col}`);
                         const num = parseFloat(String(val).replace(/,/g, ''));
                         const v = isNaN(num) ? 0 : num;
@@ -7916,13 +7924,13 @@
                     const v = el ? (parseFloat(el.value) || 0) : 0;
                     if (row === '不良') {
                         // 50板/75板：不良随外贸产量质量模块同步带入；国内板/砌块：自动生成（产量−合格−修补），不能忽略
-                        record.data[row][col] = isYieldLinkedCol(col)
+                        record.data[row][col] = (isYieldLinkedCol(col) && hasYieldDetail(monthName))
                             ? Math.round((getYieldSpecSummary(monthName, col)['不良'] || 0) * 10) / 10
                             : v;
                         return;
                     }
-                    if (isYieldLinkedCol(col) && row !== '下线量') {
-                        // 外贸自动带入始终优先，手动录入的 50板/75板 产量质量数据自动忽略
+                    if (isYieldLinkedCol(col) && row !== '下线量' && hasYieldDetail(monthName)) {
+                        // 有外贸明细：导入始终优先，手动录入的 50板/75板 产量质量数据自动忽略
                         record.data[row][col] = Math.round((getYieldSpecSummary(monthName, col)[row] || 0) * 10) / 10;
                         return;
                     }
@@ -7951,7 +7959,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.305';
+        const APP_VERSION = 'v1.30.306';
 
         function forceRefresh() {
             if ('caches' in window) {
