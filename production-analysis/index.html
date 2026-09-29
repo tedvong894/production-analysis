@@ -496,6 +496,7 @@
             outline: none;
         }
         input.phase-total-input:focus { background: #f0f7ff; }
+        span.phase-total-auto { display:inline-block; min-width:78px; text-align:center; color:#555; font-variant-numeric:tabular-nums; }
         /* 月度数据·工段质量扣款「数据」按钮（自动导入 / 手动输入 合二为一）+ 下拉菜单 */
         .deduction-data-wrap { position: relative; display: inline-flex; }
         .deduction-data-btn {
@@ -2375,7 +2376,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.300</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.301</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -5586,6 +5587,16 @@
                 return sum + safeGood(yieldQty, defect);
             }, 0);
         }
+        // 单月国内板/砌块 可入库总和（外贸50/75板除外），供阶段比较「可入库总方量」自动导入
+        function getDomesticMonthWarehouse(monthName) {
+            const rec = findMonthlyRecord(monthName);
+            if (!rec || !rec.data) return 0;
+            return ['国内板', '砌块'].reduce((sum, col) => {
+                const y = parseFloat(rec.data['产量']?.[col]) || 0;
+                const d = parseFloat(rec.data['不良']?.[col]) || 0;
+                return sum + safeGood(y, d);
+            }, 0);
+        }
 
         // 单月各工段最高工资（与人工成本页「工段工资预测」口径一致）
         // 与「工段工资预测」完全一致的单工段最高工资计算（不做 Math.max(0,..) 截断，负值照实返回，与工资预测显示一致）
@@ -6479,7 +6490,7 @@
         // ===== 指标2：阶段比较（行=上旬/中旬/下旬，仅显示已有数据的阶段） =====
         // 说明：① 每日明细仅含外贸规格（50板/75板）；② 黄色修正数据条（同日第3条起）计入本表（v1.30.274）；
         //       ③ 无数据的阶段（如下旬未到/未录）整行不出现，录入后自动出现；
-        //       ④ v1.30.277：可入库总产量(方)=手动输入（存 yieldData.months[yk].phaseTotals），外贸占比=外贸可入库/可入库总产量 自动算。
+        //       ④ v1.30.301：可入库总方量(方)=国内板/砌块，上旬手动、中旬=月度总和−上旬、下旬=月度总和−上旬−中旬 自动算（不分摊）；外贸占比=外贸可入库/(外贸+国内板/砌块)。
         function renderPhaseComparison() {
             const tEl = document.getElementById('manalysis-phase-table');
             if (!tEl) return;
@@ -6494,6 +6505,13 @@
             }
             const yk = findYieldMonthKey(monthName);
             const pt = (yk && yieldData.months[yk] && yieldData.months[yk].phaseTotals) || {};
+            // 国内板/砌块 月度可入库总和（来自月度数据模块，按 safeGood 口径=产量−不良）；外贸50/75板 不计入（外贸有每日明细）
+            const domesticMonthTotal = getDomesticMonthWarehouse(monthName);
+            // 阶段分配：上旬=手输；中旬=月度总和−上旬；下旬=月度总和−上旬−中旬（不搞分摊）
+            const d0 = parseFloat(pt['0']) || 0;
+            const d1 = Math.max(0, domesticMonthTotal - d0);
+            const d2 = Math.max(0, domesticMonthTotal - d0 - d1);
+            const domestic = [d0, d1, d2];
             const phaseRecs = [[], [], []];
             allRecs.forEach(r => phaseRecs[manalysisPhaseOf(r.date)].push(r));
             const rows = [];
@@ -6503,39 +6521,45 @@
                 const warehouse = safeGood(s.产量, s.不良); // 与经营分析 getMonthYieldStats 同口径（合并后 safeGood）
                 // 外贸分拣量 = 外贸可入库产量 / (1-不良率)；不良率≥100% 时分母≤0 → 显示 —
                 const dRate = s.产量 > 0 ? s.不良 / s.产量 : 0;
-                const total = parseFloat(pt[String(i)]) || 0;
+                const total = domestic[i]; // 可入库总方量=国内板/砌块 本阶段（上旬手输、中旬/下旬自动）
                 rows.push({
                     i,
                     label: shortLabel + MANALYSIS_PHASE_NAMES[i],
                     sortQty: (1 - dRate) > 0 ? warehouse / (1 - dRate) : null,
                     warehouse,
                     total,
-                    ratio: total > 0 ? warehouse / total * 100 : null,
+                    ratio: (warehouse + total) > 0 ? warehouse / (warehouse + total) * 100 : null,
                     qual: s.产量 > 0 ? (s.产量 - s.不良 - s.修补) / s.产量 * 100 : 0,
                     repairRate: s.产量 > 0 ? s.修补 / s.产量 * 100 : 0,
                     defectRate: s.产量 > 0 ? s.不良 / s.产量 * 100 : 0
                 });
             });
-            let h = '<div class="table-scroll"><table class="analysis-table center"><thead><tr><th>阶段</th><th style="width:120px;">可入库总产量(方)</th><th>外贸分拣量(方)</th><th>外贸可入库产量(方)</th><th>外贸占比(%)</th><th>合格率(%)</th><th>修补率(%)</th><th>不良率(%)</th></tr></thead><tbody>';
+            let h = '<div class="table-scroll"><table class="analysis-table center"><thead><tr><th>阶段</th><th style="width:120px;" title="国内板/砌块 可入库总方量：上旬手动、中旬/下旬按 月度总和−上旬 自动">可入库总方量(方)</th><th>外贸分拣量(方)</th><th>外贸可入库产量(方)</th><th>外贸占比(%)</th><th>合格率(%)</th><th>修补率(%)</th><th>不良率(%)</th></tr></thead><tbody>';
             rows.forEach(r0 => {
+                // 上旬(0)：国内板/砌块 手动输入；中旬(1)/下旬(2)：自动=月度总和−累计（只读）
+                const totalCell = r0.i === 0
+                    ? `<input type="text" inputmode="decimal" class="phase-total-input" id="phase-total-${r0.i}" data-wh="${r0.warehouse}" value="${fmtNum(r0.total)}" onfocus="this.select()" onkeydown="if(event.key==='Enter') this.blur()" onchange="onPhaseTotalEdit(${r0.i})" title="国内板/砌块 上旬（手动）；中旬/下旬=月度总和−上旬 自动算">`
+                    : `<span class="phase-total-auto" title="自动=月度数据表国内板/砌块总和−上旬">${fmtNum(r0.total)}</span>`;
                 h += `<tr><td>${r0.label}</td>`
-                    + `<td><input type="text" inputmode="decimal" class="phase-total-input" id="phase-total-${r0.i}" data-wh="${r0.warehouse}" value="${fmtNum(r0.total)}" onfocus="this.select()" onkeydown="if(event.key==='Enter') this.blur()" onchange="onPhaseTotalEdit(${r0.i})"></td>`
+                    + `<td>${totalCell}</td>`
                     + `<td>${r0.sortQty === null ? '—' : fmtNum(r0.sortQty)}</td><td>${fmtNum(r0.warehouse)}</td>`
                     + `<td class="right" id="phase-ratio-${r0.i}">${r0.ratio === null ? '—' : fmtPct(r0.ratio)}</td>`
                     + `<td>${fmtPct(r0.qual)}</td><td>${fmtPct(r0.repairRate)}</td><td>${fmtPct(r0.defectRate)}</td></tr>`;
             });
-            // 合计行：全月已录部分（含修正数据条；总产量=三阶段手输之和）
+            // 合计行：国内板/砌块=三阶段之和（≈月度总和，中旬/下旬自动）；外贸占比=外贸可入库/(外贸+国内板/砌块)
             const tSum = manalysisSum(allRecs, null);
             const tWh = safeGood(tSum.产量, tSum.不良);
             const tDRate = tSum.产量 > 0 ? tSum.不良 / tSum.产量 : 0;
             const tSort = (1 - tDRate) > 0 ? tWh / (1 - tDRate) : null;
-            const tTotal = ['0', '1', '2'].reduce((s2, k) => s2 + (parseFloat(pt[k]) || 0), 0);
-            h += `<tr class="analysis-total"><td>合计</td><td id="phase-total-sum">${fmtNum(tTotal)}</td><td>${tSort === null ? '—' : fmtNum(tSort)}</td><td>${fmtNum(tWh)}</td><td id="phase-ratio-sum">${tTotal > 0 ? fmtPct(tWh / tTotal * 100) : '—'}</td><td>${fmtPct(tSum.产量 > 0 ? (tSum.产量 - tSum.不良 - tSum.修补) / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.修补 / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.不良 / tSum.产量 * 100 : 0)}</td></tr>`;
+            const tTotal = domestic[0] + domestic[1] + domestic[2];
+            const tGrand = tWh + tTotal;
+            h += `<tr class="analysis-total"><td>合计</td><td id="phase-total-sum">${fmtNum(tTotal)}</td><td>${tSort === null ? '—' : fmtNum(tSort)}</td><td>${fmtNum(tWh)}</td><td id="phase-ratio-sum">${tGrand > 0 ? fmtPct(tWh / tGrand * 100) : '—'}</td><td>${fmtPct(tSum.产量 > 0 ? (tSum.产量 - tSum.不良 - tSum.修补) / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.修补 / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.不良 / tSum.产量 * 100 : 0)}</td></tr>`;
             h += '</tbody></table></div>';
             tEl.innerHTML = h;
         }
-        // 总产量手输：存 yieldData.months[yk].phaseTotals{'0','1','2'}，随 YIELD_KEY 持久化/联网同步；占比与合计即时重算
+        // 国内板/砌块 上旬可入库手输：存 yieldData.months[yk].phaseTotals{'0'}（中旬/下旬由月度总和自动推算，不再手输），随 YIELD_KEY 持久化/联网同步；占比与合计即时重算
         function onPhaseTotalEdit(i) {
+            if (i !== 0) return; // 仅上旬手动；中旬/下旬由月度总和自动推算（只读）
             const monthName = getLatestMonth();
             const yk = findYieldMonthKey(monthName);
             const el = document.getElementById('phase-total-' + i);
@@ -6543,9 +6567,11 @@
             const v = Math.max(0, parseFloat(el.value) || 0);
             el.value = fmtNum(v);
             if (!yieldData.months[yk].phaseTotals) yieldData.months[yk].phaseTotals = {};
-            yieldData.months[yk].phaseTotals[String(i)] = v;
+            yieldData.months[yk].phaseTotals['0'] = v;
+            delete yieldData.months[yk].phaseTotals['1']; // 中旬/下旬改自动推算，清除旧手动值
+            delete yieldData.months[yk].phaseTotals['2'];
             saveYield();
-            renderPhaseComparison(); // 重算外贸占比与合计行
+            renderPhaseComparison(); // 重算中旬/下旬与外贸占比、合计行
         }
 
         // ============ 简要分析（可折叠 / 可编辑） ============
@@ -7927,7 +7953,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.300';
+        const APP_VERSION = 'v1.30.301';
 
         function forceRefresh() {
             if ('caches' in window) {
