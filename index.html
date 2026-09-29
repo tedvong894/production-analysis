@@ -2376,7 +2376,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.296</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.297</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -5718,12 +5718,14 @@
                 }
                 return `<img class="spark" width="${W}" height="${H}" src="${cv.toDataURL('image/png')}" alt="">`;
             };
-            // 人工成本走势：一张图 3 条线（考核工段蓝 / 计件工段橙 / 均线灰虚线=两工段逐月均值），量纲不打架
+            // 人工成本走势：一张图 3 条线（考核工段蓝 / 计件工段橙 / 均线灰虚线=两工段全期均值的均值，水平常数线）
             const sparkline2 = (assessVals, pieceVals) => {
                 const a = assessVals || [], p = pieceVals || [];
                 const all = a.concat(p);
                 if (!all.length) return '';
-                const meanVals = a.map((v, i) => (v + (p[i] != null ? p[i] : v)) / 2); // 考核与计件逐月均值（均线）
+                const meanOf = arr => arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : 0;
+                const constMean = (meanOf(a) + meanOf(p)) / 2; // 考核与计件全期均值的均值
+                const meanVals = a.map(() => constMean); // 水平常数线（逐点同值）
                 const all2 = all.concat(meanVals);
                 const W = 88, H = 30, P = 4;
                 const lo = Math.min.apply(null, all2), hi = Math.max.apply(null, all2);
@@ -7940,7 +7942,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.296';
+        const APP_VERSION = 'v1.30.297';
 
         function forceRefresh() {
             if ('caches' in window) {
