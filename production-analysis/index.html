@@ -725,8 +725,6 @@
         #page-monthly .monthly-main-table th:nth-last-child(1),
         #page-monthly .monthly-main-table td:nth-last-child(1) { width: 105px; min-width: 105px; }
         #page-monthly .monthly-main-table input[type="number"].monthly-input { min-width: 62px; height: 30px; padding: 0 1px; line-height: 30px; text-align: center; }
-        /* 外贸联动列（50板/75板）已被批量/手动导入覆盖时的浅色高亮标记 */
-        #page-monthly .monthly-main-table input[type="number"].monthly-input.yield-override-input.is-overridden { background: #fff8e1; }
         .monthly-main-table-wrapper { border: 1px solid #c0d0e8; border-radius: 8px; overflow: hidden; background: #fff; }
         /* 统一下方子卡片圆角边距 */
         #page-monthly .monthly-grid-cell .dept-deduction-section {
@@ -2377,7 +2375,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.299</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.300</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -3058,7 +3056,7 @@
                             <div class="data-menu" id="monthly-data-menu" style="display:none; right:0; left:auto;">
                                 <button type="button" class="data-menu-item" onclick="monthlyDataMenuAction('entry')"><span class="dm-ico">📝</span>数据录入</button>
                                 <button type="button" class="data-menu-item" onclick="monthlyDataMenuAction('addmonth')"><span class="dm-ico">➕</span>添加新月份</button>
-                                <button type="button" class="data-menu-item" onclick="monthlyDataMenuAction('sync')" title="清除本页 50板/75板 的手工覆盖，从「外贸产量质量」模块重新带入最新值"><span class="dm-ico">🔄</span>从外贸同步</button>
+                                <button type="button" class="data-menu-item" onclick="monthlyDataMenuAction('sync')" title="从「外贸产量质量」模块重新带入 50板/75板 最新值（自动带入，只读）"><span class="dm-ico">🔄</span>从外贸同步</button>
                             </div>
                         </div>
                     </div>
@@ -3088,13 +3086,12 @@
                                                 const linked = row !== '下线量' && isYieldLinkedCol(col);
                                                 let linkedVal = 0;
                                                 if (linked) {
-                                                    const ov = getYieldOverrideVal(row, col);
-                                                    linkedVal = (ov !== undefined) ? ov : (getYieldSpecSummary(monthName, col)[row] || 0);
+                                                    linkedVal = getYieldSpecSummary(monthName, col)[row] || 0;
                                                 }
                                                 return `
                                                 <td class="right">
                                                     ${linked
-                                                        ? `<input type="number" id="cur-${row}-${col}" value="${fmtNum(linkedVal)}" class="monthly-input yield-override-input${getYieldOverrideVal(row,col)!==undefined?' is-overridden':''}" min="0" onchange="onYieldLinkEdit('${row}','${col}')" title="外贸自动带入；历史月份无明细时可在此录入/批量导入，导入值优先">`
+                                                        ? `<input type="number" id="cur-${row}-${col}" value="${fmtNum(linkedVal)}" class="monthly-input" readonly title="外贸产量质量模块自动带入（只读）">`
                                                         : `<input type="number" id="cur-${row}-${col}" value="${fmtNum(monthRecord.data[row]?.[col] ?? 0)}" class="monthly-input" min="0" onchange="onMonthlyCellEdit('recalc')">`
                                                     }
                                                 </td>
@@ -3901,7 +3898,7 @@
                 if (!record.data['不良']) record.data['不良'] = {};
                 // 仅同步 产量/合格/修补；不良 = 产量−合格−修补 由本地自动计算
                 ['产量', '合格', '修补'].forEach(row => {
-                    if (record.yieldOverride && record.yieldOverride[col] && record.yieldOverride[col][row] !== undefined) return;
+                    /* 外贸自动带入始终优先，不保留手动覆盖 */
                     const oldVal = parseFloat(record.data[row][col]) || 0;
                     const newVal = Math.round((s[row] || 0) * 10) / 10;
                     if (Math.abs(oldVal - newVal) > 1e-9) changed = true;
@@ -7561,15 +7558,8 @@
                     const colIdx = startColIdx + cIdx;
                     if (colIdx >= MONTHLY_COLS.length) return;
                     const col = MONTHLY_COLS[colIdx];
-                    // 50板/75板：粘贴写入覆盖值，优先级高于外贸自动带入（下线量为外部数据，不入覆盖）
-                    if (isYieldLinkedCol(col) && MONTHLY_ROWS[rowIdx] !== '下线量') {
-                        const el = document.getElementById(`cur-${MONTHLY_ROWS[rowIdx]}-${col}`);
-                        const num = parseFloat(String(val).trim().replace(/,/g, ''));
-                        const v = isNaN(num) ? 0 : num;
-                        if (el) el.value = fmtNum(v);
-                        setYieldOverride(MONTHLY_ROWS[rowIdx], col, v);
-                        return;
-                    }
+                    // 50板/75板 的 产量/合格/修补 为外贸自动带入（只读），粘贴跳过（不覆盖自动值）
+                    if (isYieldLinkedCol(col) && MONTHLY_ROWS[rowIdx] !== '下线量') return;
                     const el = document.getElementById(`cur-${MONTHLY_ROWS[rowIdx]}-${col}`);
                     if (el) {
                         const num = parseFloat(String(val).trim().replace(/,/g, ''));
@@ -7730,14 +7720,12 @@
                     cols.forEach((val, cIdx) => {
                         if (cIdx >= MONTHLY_COLS.length) return;
                         const col = MONTHLY_COLS[cIdx];
+                        // 50板/75板 的 产量/合格/修补 为外贸自动带入（只读），批量导入跳过（不写输入框、不覆盖自动值）
+                        if (isYieldLinkedCol(col) && row !== '下线量') return;
                         const el = document.getElementById(`cur-${row}-${col}`);
                         const num = parseFloat(String(val).replace(/,/g, ''));
                         const v = isNaN(num) ? 0 : num;
                         if (el) el.value = fmtNum(v);
-                        // 50板/75板：批量导入覆盖值优先于外贸自动带入（下线量为外部数据，不入覆盖）
-                        if (isYieldLinkedCol(col) && row !== '下线量') {
-                            setYieldOverride(row, col, v);
-                        }
                     });
                 });
                 recalcDefect();
@@ -7908,13 +7896,9 @@
                         return;
                     }
                     if (!record.data[row]) record.data[row] = {};
-                    // 50板/75板：批量/手动导入覆盖值优先于外贸自动带入
-                    // v1.30.220：下线量为外部导入数据，不走外贸联动，始终读输入框
+                    // 50板/75板：产量/合格/修补 为外贸自动带入（只读），始终用外贸汇总，不再保留手动覆盖
                     if (isYieldLinkedCol(col) && row !== '下线量') {
-                        const ov = (record.yieldOverride && record.yieldOverride[col] && record.yieldOverride[col][row] !== undefined)
-                            ? record.yieldOverride[col][row]
-                            : Math.round((getYieldSpecSummary(monthName, col)[row] || 0) * 10) / 10;
-                        record.data[row][col] = ov;
+                        record.data[row][col] = Math.round((getYieldSpecSummary(monthName, col)[row] || 0) * 10) / 10;
                         return;
                     }
                     const el = document.getElementById(`cur-${row}-${col}`);
@@ -7943,7 +7927,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.299';
+        const APP_VERSION = 'v1.30.300';
 
         function forceRefresh() {
             if ('caches' in window) {
