@@ -481,7 +481,7 @@
         input[type="number"].monthly-input:focus {
             background: #f0f7ff;
         }
-        input[type="number"].phase-total-input { min-width:78px; text-align:center; color:#4a5568; font-variant-numeric:tabular-nums; }
+        input[type="number"].phase-total-input { font: inherit; color: inherit; text-align: center; min-width: 78px; padding: 2px 0; font-variant-numeric: tabular-nums; }
         /* 月度数据·工段质量扣款「数据」按钮（自动导入 / 手动输入 合二为一）+ 下拉菜单 */
         .deduction-data-wrap { position: relative; display: inline-flex; }
         .deduction-data-btn {
@@ -2361,7 +2361,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.303</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.304</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -6479,7 +6479,7 @@
         // ===== 指标2：阶段比较（行=上旬/中旬/下旬，仅显示已有数据的阶段） =====
         // 说明：① 每日明细仅含外贸规格（50板/75板）；② 黄色修正数据条（同日第3条起）计入本表（v1.30.274）；
         //       ③ 无数据的阶段（如下旬未到/未录）整行不出现，录入后自动出现；
-        //       ④ v1.30.303：可入库总方量(方)=国内板/砌块，三旬均为手动输入（存 yieldData.months[yk].phaseTotals）；外贸占比=外贸可入库/(外贸+国内板/砌块)。
+        //       ④ v1.30.303：可入库总方量(方)=国内板/砌块，三旬均为手动输入（存 yieldData.months[yk].phaseTotals）；外贸占比=外贸可入库/可入库总方量（各阶段独立）。
         function renderPhaseComparison() {
             const tEl = document.getElementById('manalysis-phase-table');
             if (!tEl) return;
@@ -6515,7 +6515,8 @@
                     sortQty: (1 - dRate) > 0 ? warehouse / (1 - dRate) : null,
                     warehouse,
                     total,
-                    ratio: (total !== null && (warehouse + total) > 0) ? warehouse / (warehouse + total) * 100 : null,
+                    // 外贸占比 = 外贸可入库方量 / 可入库总方量（手输值），各阶段独立
+                    ratio: (total !== null && total > 0) ? warehouse / total * 100 : null,
                     qual: s.产量 > 0 ? (s.产量 - s.不良 - s.修补) / s.产量 * 100 : 0,
                     repairRate: s.产量 > 0 ? s.修补 / s.产量 * 100 : 0,
                     defectRate: s.产量 > 0 ? s.不良 / s.产量 * 100 : 0
@@ -6524,21 +6525,20 @@
             let h = '<div class="table-scroll"><table class="analysis-table center"><thead><tr><th>阶段</th><th style="width:120px;" title="手动输入该旬国内板/砌块可入库总方量">可入库总方量(方)</th><th>外贸分拣量(方)</th><th>外贸可入库产量(方)</th><th>外贸占比(%)</th><th>合格率(%)</th><th>修补率(%)</th><th>不良率(%)</th></tr></thead><tbody>';
             rows.forEach(r0 => {
                 // 可入库总方量：三旬均手动输入（清空=未录入，外贸占比显示 —）
-                const totalCell = `<input type="number" class="monthly-input phase-total-input" min="0" step="0.1" value="${r0.total === null ? '' : r0.total}" onchange="onPhaseTotalEdit(${r0.i}, this.value)" title="手动输入该旬国内板/砌块可入库总方量">`;
+                const totalCell = `<input type="number" class="monthly-input phase-total-input" min="0" step="0.1" value="${r0.total === null ? '' : fmtNum(r0.total)}" onchange="onPhaseTotalEdit(${r0.i}, this.value)" title="手动输入该旬国内板/砌块可入库总方量">`;
                 h += `<tr><td>${r0.label}</td>`
                     + `<td>${totalCell}</td>`
                     + `<td>${r0.sortQty === null ? '—' : fmtNum(r0.sortQty)}</td><td>${fmtNum(r0.warehouse)}</td>`
                     + `<td class="right" id="phase-ratio-${r0.i}">${r0.ratio === null ? '—' : fmtPct(r0.ratio)}</td>`
                     + `<td>${fmtPct(r0.qual)}</td><td>${fmtPct(r0.repairRate)}</td><td>${fmtPct(r0.defectRate)}</td></tr>`;
             });
-            // 合计行：国内板/砌块=三旬手动值之和；外贸占比=外贸可入库/(外贸+国内板/砌块)
+            // 合计行：国内板/砌块=三旬手动值之和；外贸占比=外贸可入库/可入库总方量（各阶段独立，合计=外贸合计/手动合计）
             const tSum = manalysisSum(allRecs, null);
             const tWh = safeGood(tSum.产量, tSum.不良);
             const tDRate = tSum.产量 > 0 ? tSum.不良 / tSum.产量 : 0;
             const tSort = (1 - tDRate) > 0 ? tWh / (1 - tDRate) : null;
             const tTotal = domestic.reduce((a, b) => a + (b === null ? 0 : b), 0);
-            const tGrand = tWh + tTotal;
-            h += `<tr class="analysis-total"><td>合计</td><td id="phase-total-sum">${fmtNum(tTotal)}</td><td>${tSort === null ? '—' : fmtNum(tSort)}</td><td>${fmtNum(tWh)}</td><td id="phase-ratio-sum">${tGrand > 0 ? fmtPct(tWh / tGrand * 100) : '—'}</td><td>${fmtPct(tSum.产量 > 0 ? (tSum.产量 - tSum.不良 - tSum.修补) / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.修补 / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.不良 / tSum.产量 * 100 : 0)}</td></tr>`;
+            h += `<tr class="analysis-total"><td>合计</td><td id="phase-total-sum">${fmtNum(tTotal)}</td><td>${tSort === null ? '—' : fmtNum(tSort)}</td><td>${fmtNum(tWh)}</td><td id="phase-ratio-sum">${tTotal > 0 ? fmtPct(tWh / tTotal * 100) : '—'}</td><td>${fmtPct(tSum.产量 > 0 ? (tSum.产量 - tSum.不良 - tSum.修补) / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.修补 / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.不良 / tSum.产量 * 100 : 0)}</td></tr>`;
             h += '</tbody></table></div>';
             tEl.innerHTML = h;
         }
@@ -7951,7 +7951,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.303';
+        const APP_VERSION = 'v1.30.304';
 
         function forceRefresh() {
             if ('caches' in window) {
