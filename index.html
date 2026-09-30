@@ -2362,7 +2362,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.311</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.312</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -7953,7 +7953,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.311';
+        const APP_VERSION = 'v1.30.312';
 
         function forceRefresh() {
             if ('caches' in window) {
@@ -8816,6 +8816,7 @@
                     _dirty = false; _lastErr = '';
                     _lastCloudJson = JSON.stringify(payload);
                     _lastSyncAt = new Date();
+                    saveBaselineFromPayload(payload);   // v1.30.312：本机已推上云，基线同步为本地记录集合
                     setSync('已同步', 'on');
                 } catch (e) {
                     _lastErr = e.message || String(e);
@@ -8824,37 +8825,99 @@
             }, 250);
         }
 
-        // 首拉离线保护：把「云端没有、本地有实际数据」的条目并入云端（云端为准，只补不改）
-        function mergeLocalAdditions(localPayload, cloudPayload) {
-            const out = JSON.parse(JSON.stringify(cloudPayload || {}));
+        // 三路合并基线：记录「上次成功同步后云端应有的记录 id / 月份名」。
+        // 用于首拉合并时区分「本机离线新增」与「其他设备已删除」，根治「删了又恢复」。
+        function _syncBaseKey() {
+            return 'pa_sync_baseline_v1_' + (getSyncBoard() || 'none');
+        }
+        function loadBaseline() {
             try {
+                const v = localStorage.getItem(_syncBaseKey());
+                if (v) { const o = JSON.parse(v); if (o && typeof o === 'object') return o; }
+            } catch (e) {}
+            return { yield: {}, order: {}, monthly: [] };
+        }
+        function saveBaselineFromPayload(payload) {
+            try {
+                const b = { [YIELD_KEY]: {}, [ORDER_KEY]: {}, monthly: [] };
+                const m = payload && payload[MONTHLY_KEY];
+                if (m && Array.isArray(m.months)) m.months.forEach(x => { if (x && x.name) b.monthly.push(x.name); });
+                [YIELD_KEY, ORDER_KEY].forEach(k => {
+                    const obj = payload && payload[k];
+                    if (obj && obj.months) Object.keys(obj.months).forEach(mk => {
+                        const recs = (obj.months[mk] && obj.months[mk].records) || [];
+                        const ids = recs.filter(r => r && r.id != null).map(r => r.id);
+                        if (ids.length) b[k][mk] = ids;
+                    });
+                });
+                try { localStorage.setItem(_syncBaseKey(), JSON.stringify(b)); } catch (e) {}
+            } catch (e) {}
+        }
+
+        // 首拉离线保护（三路合并，根治「删了又恢复」）：
+        //   以「上次成功同步时的云端基线 baseline」为参照，区分记录的来源：
+        //   - 两端都有（按 id/月份名）：云端为准（权威）
+        //   - 仅云端有 且 不在基线（其他设备新增）：保留
+        //   - 仅云端有 且 在基线（本机曾同步到、后被其他设备删除）：丢弃 ← 修复删了又恢复
+        //   - 仅本地有 且 不在基线（本机离线新增）：保留，稍后推云端
+        //   - 仅本地有 且 在基线（被其他设备删除）：不本地复活 ← 修复删了又恢复
+        function mergeLocalAdditions(localPayload, cloudPayload, baseline) {
+            const out = JSON.parse(JSON.stringify(cloudPayload || {}));
+            const base = baseline || { yield: {}, order: {}, monthly: [] };
+            try {
+                // ---- 月度数据：按月份名三路合并 ----
                 const lm = localPayload[MONTHLY_KEY], cm = out[MONTHLY_KEY];
                 if (lm && Array.isArray(lm.months)) {
                     if (!cm || !Array.isArray(cm.months)) { out[MONTHLY_KEY] = JSON.parse(JSON.stringify(lm)); }
                     else {
-                        const names = {};
-                        cm.months.forEach(m => { if (m && m.name) names[m.name] = 1; });
-                        lm.months.forEach(m => {
-                            if (!m || !m.name || names[m.name]) return;
-                            let real = false;
-                            try { real = monthHasProductionData(m); } catch (e) {}
-                            if (!real && m.data && m.data.deptDeduction) real = Object.keys(m.data.deptDeduction).some(k => +m.data.deptDeduction[k]);
-                            if (real) cm.months.push(JSON.parse(JSON.stringify(m)));
-                        });
+                        const baseNames = {}; (base.monthly || []).forEach(n => { baseNames[n] = 1; });
+                        const cloudNames = {}; cm.months.forEach(m => { if (m && m.name) cloudNames[m.name] = 1; });
+                        const localNames = {}; lm.months.forEach(m => { if (m && m.name) localNames[m.name] = 1; });
+                        const kept = cm.months.filter(m => m && m.name && (localNames[m.name] || !baseNames[m.name]));
+                        const added = lm.months.filter(m => m && m.name && !cloudNames[m.name] && !baseNames[m.name]);
+                        out[MONTHLY_KEY].months = kept.concat(added.map(m => JSON.parse(JSON.stringify(m))));
                     }
                 }
+                // ---- 外贸产量 / 订单履约：按记录 id 三路合并 ----
                 [YIELD_KEY, ORDER_KEY].forEach(k => {
                     const l = localPayload[k], c = out[k];
                     if (!l || !l.months) return;
-                    if (!c || !c.months) { out[k] = JSON.parse(JSON.stringify(l)); return; }
-                    Object.keys(l.months).forEach(mk => {
+                    const baseIdsMk = (base[k] && typeof base[k] === 'object') ? base[k] : {};
+                    const inBase = (mk, id) => !!(baseIdsMk[mk] && baseIdsMk[mk].indexOf && baseIdsMk[mk].indexOf(id) >= 0);
+                    if (!c || !c.months) {
+                        // 云端无该键：整份本地作为离线新增保留（非删了又恢复场景）
+                        out[k] = JSON.parse(JSON.stringify(l)); return;
+                    }
+                    const result = {};
+                    Object.keys(c.months).forEach(mk => {
+                        const crecs = (c.months[mk] && c.months[mk].records) || [];
                         const lrecs = (l.months[mk] && l.months[mk].records) || [];
-                        if (!c.months[mk]) { c.months[mk] = JSON.parse(JSON.stringify(l.months[mk])); return; }
-                        c.months[mk].records = c.months[mk].records || [];
-                        const ids = {};
-                        c.months[mk].records.forEach(r => { if (r && r.id != null) ids[r.id] = 1; });
-                        lrecs.forEach(r => { if (r && r.id != null && !ids[r.id]) c.months[mk].records.push(JSON.parse(JSON.stringify(r))); });
+                        const localIds = {};
+                        lrecs.forEach(r => { if (r && r.id != null) localIds[r.id] = 1; });
+                        const kept = [];
+                        crecs.forEach(r => {
+                            if (!r || r.id == null) return;
+                            if (localIds[r.id]) { kept.push(JSON.parse(JSON.stringify(r))); return; } // 两端都有：云端为准
+                            if (!inBase(mk, r.id)) { kept.push(JSON.parse(JSON.stringify(r))); return; } // 其他设备新增（不在基线）
+                            // 在基线但本地已无：被其他设备删除 → 丢弃（修复删了又恢复）
+                        });
+                        lrecs.forEach(r => {
+                            if (!r || r.id == null) return;
+                            const inCloud = crecs.some(cr => cr && cr.id === r.id);
+                            if (!inCloud && !inBase(mk, r.id)) kept.push(JSON.parse(JSON.stringify(r))); // 本地离线新增
+                        });
+                        const src = c.months[mk] ? JSON.parse(JSON.stringify(c.months[mk])) : { records: [] };
+                        src.records = kept;
+                        result[mk] = src;
                     });
+                    // 本地有、云端没有的月份：整月作为离线新增保留（其中记录确实不在基线）
+                    Object.keys(l.months).forEach(mk => {
+                        if (result[mk]) return;
+                        const lrecs = (l.months[mk] && l.months[mk].records) || [];
+                        const offlineNew = lrecs.filter(r => r && r.id != null && !inBase(mk, r.id));
+                        if (offlineNew.length) result[mk] = JSON.parse(JSON.stringify(l.months[mk]));
+                    });
+                    out[k] = { months: result };
                 });
             } catch (e) { return cloudPayload; }
             return out;
@@ -8885,12 +8948,13 @@
                     }
                     let adopted = cloud, pushMerged = false;
                     if (!_pulled) {
-                        const merged = mergeLocalAdditions(collectLocalPayload(), cloud);
+                        const merged = mergeLocalAdditions(collectLocalPayload(), cloud, loadBaseline());
                         pushMerged = JSON.stringify(merged) !== JSON.stringify(cloud);
                         adopted = merged;
                     }
                     _suppressDirty = true;
                     try { applyPayloadToLocal(adopted); rebuildFromStorage(); } finally { _suppressDirty = false; }
+                    saveBaselineFromPayload(adopted);   // v1.30.312：记录首拉合并后的云端基线，供后续三路合并识别「其他设备已删除」
                     _dirty = false; _lastErr = '';
                     _pulled = true; _lastSyncAt = new Date();
                     _lastCloudJson = JSON.stringify(adopted);
