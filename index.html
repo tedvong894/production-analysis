@@ -2362,7 +2362,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.312</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.313</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -7953,7 +7953,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.312';
+        const APP_VERSION = 'v1.30.313';
 
         function forceRefresh() {
             if ('caches' in window) {
@@ -8854,31 +8854,35 @@
             } catch (e) {}
         }
 
-        // 首拉离线保护（三路合并，根治「删了又恢复」）：
-        //   以「上次成功同步时的云端基线 baseline」为参照，区分记录的来源：
-        //   - 两端都有（按 id/月份名）：云端为准（权威）
-        //   - 仅云端有 且 不在基线（其他设备新增）：保留
-        //   - 仅云端有 且 在基线（本机曾同步到、后被其他设备删除）：丢弃 ← 修复删了又恢复
-        //   - 仅本地有 且 不在基线（本机离线新增）：保留，稍后推云端
-        //   - 仅本地有 且 在基线（被其他设备删除）：不本地复活 ← 修复删了又恢复
+        // 首拉离线保护（三路合并，根治「删了又恢复」且不丢数据）：
+        //   以「上次成功同步时的云端基线 baseline」为参照，在「云端快照」基础上做最小改动：
+        //   - 云端记录【全部保留】；仅当某记录有 id、且在基线（曾同步过）、但本地已无 → 判定为其他设备已删除，才丢弃。
+        //   - 没有 id 的记录一律保留（id 仅在渲染对应 tab 时回填，首拉早于渲染，绝不能丢）。
+        //   - 本地新增（有 id、云端无、基线无）→ 并入，稍后推云端。
+        //   - 月度：云端月份全保留；本地月份仅当「云端无 且 基线无」才并入（基线有而云端无=其他设备已删该月，不复活）。
         function mergeLocalAdditions(localPayload, cloudPayload, baseline) {
             const out = JSON.parse(JSON.stringify(cloudPayload || {}));
             const base = baseline || { yield: {}, order: {}, monthly: [] };
             try {
-                // ---- 月度数据：按月份名三路合并 ----
+                // ---- 月度数据：按月份名 ----
                 const lm = localPayload[MONTHLY_KEY], cm = out[MONTHLY_KEY];
                 if (lm && Array.isArray(lm.months)) {
                     if (!cm || !Array.isArray(cm.months)) { out[MONTHLY_KEY] = JSON.parse(JSON.stringify(lm)); }
                     else {
                         const baseNames = {}; (base.monthly || []).forEach(n => { baseNames[n] = 1; });
-                        const cloudNames = {}; cm.months.forEach(m => { if (m && m.name) cloudNames[m.name] = 1; });
-                        const localNames = {}; lm.months.forEach(m => { if (m && m.name) localNames[m.name] = 1; });
-                        const kept = cm.months.filter(m => m && m.name && (localNames[m.name] || !baseNames[m.name]));
-                        const added = lm.months.filter(m => m && m.name && !cloudNames[m.name] && !baseNames[m.name]);
-                        out[MONTHLY_KEY].months = kept.concat(added.map(m => JSON.parse(JSON.stringify(m))));
+                        const names = {};
+                        cm.months.forEach(m => { if (m && m.name) names[m.name] = 1; });
+                        lm.months.forEach(m => {
+                            if (!m || !m.name || names[m.name]) return;
+                            if (baseNames[m.name]) return; // 基线有、云端无 → 其他设备已删该月，不本地复活
+                            let real = false;
+                            try { real = monthHasProductionData(m); } catch (e) {}
+                            if (!real && m.data && m.data.deptDeduction) real = Object.keys(m.data.deptDeduction).some(k => +m.data.deptDeduction[k]);
+                            if (real) cm.months.push(JSON.parse(JSON.stringify(m)));
+                        });
                     }
                 }
-                // ---- 外贸产量 / 订单履约：按记录 id 三路合并 ----
+                // ---- 外贸产量 / 订单履约：以云端为基底做最小改动 ----
                 [YIELD_KEY, ORDER_KEY].forEach(k => {
                     const l = localPayload[k], c = out[k];
                     if (!l || !l.months) return;
@@ -8888,36 +8892,29 @@
                         // 云端无该键：整份本地作为离线新增保留（非删了又恢复场景）
                         out[k] = JSON.parse(JSON.stringify(l)); return;
                     }
-                    const result = {};
+                    // 1) 按基线丢弃「其他设备已删除」的云端记录（仅 id、且在基线、本地已无）；无 id 记录一律保留
                     Object.keys(c.months).forEach(mk => {
-                        const crecs = (c.months[mk] && c.months[mk].records) || [];
-                        const lrecs = (l.months[mk] && l.months[mk].records) || [];
+                        const crecs = c.months[mk] && c.months[mk].records;
+                        if (!crecs) return;
                         const localIds = {};
-                        lrecs.forEach(r => { if (r && r.id != null) localIds[r.id] = 1; });
-                        const kept = [];
-                        crecs.forEach(r => {
-                            if (!r || r.id == null) return;
-                            if (localIds[r.id]) { kept.push(JSON.parse(JSON.stringify(r))); return; } // 两端都有：云端为准
-                            if (!inBase(mk, r.id)) { kept.push(JSON.parse(JSON.stringify(r))); return; } // 其他设备新增（不在基线）
-                            // 在基线但本地已无：被其他设备删除 → 丢弃（修复删了又恢复）
+                        ((l.months[mk] && l.months[mk].records) || []).forEach(r => { if (r && r.id != null) localIds[r.id] = 1; });
+                        c.months[mk].records = crecs.filter(r => {
+                            if (!r || r.id == null) return true;                    // 无 id：保留，绝不丢
+                            if (inBase(mk, r.id) && !localIds[r.id]) return false;  // 其他设备已删 → 丢弃
+                            return true;
                         });
-                        lrecs.forEach(r => {
-                            if (!r || r.id == null) return;
-                            const inCloud = crecs.some(cr => cr && cr.id === r.id);
-                            if (!inCloud && !inBase(mk, r.id)) kept.push(JSON.parse(JSON.stringify(r))); // 本地离线新增
-                        });
-                        const src = c.months[mk] ? JSON.parse(JSON.stringify(c.months[mk])) : { records: [] };
-                        src.records = kept;
-                        result[mk] = src;
                     });
-                    // 本地有、云端没有的月份：整月作为离线新增保留（其中记录确实不在基线）
+                    // 2) 并入本地离线新增（仅 id、云端无、基线无）
                     Object.keys(l.months).forEach(mk => {
-                        if (result[mk]) return;
                         const lrecs = (l.months[mk] && l.months[mk].records) || [];
-                        const offlineNew = lrecs.filter(r => r && r.id != null && !inBase(mk, r.id));
-                        if (offlineNew.length) result[mk] = JSON.parse(JSON.stringify(l.months[mk]));
+                        if (!c.months[mk]) { c.months[mk] = JSON.parse(JSON.stringify(l.months[mk])); return; }
+                        c.months[mk].records = c.months[mk].records || [];
+                        const ids = {};
+                        c.months[mk].records.forEach(r => { if (r && r.id != null) ids[r.id] = 1; });
+                        lrecs.forEach(r => {
+                            if (r && r.id != null && !ids[r.id] && !inBase(mk, r.id)) c.months[mk].records.push(JSON.parse(JSON.stringify(r)));
+                        });
                     });
-                    out[k] = { months: result };
                 });
             } catch (e) { return cloudPayload; }
             return out;
