@@ -2361,7 +2361,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.307</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.308</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -6177,7 +6177,7 @@
                         if (!denom) return '—';
                         return (cm / denom).toFixed(2);
                     };
-                    let h = '<div class="table-scroll"><table class="analysis-table wide center profit-tbl"><thead><tr><th>月份</th><th>可入库总产量</th><th>可实现总收入</th><th>DOL</th><th>盈亏平衡点产量</th><th>息税折旧前利润</th><th>单方利润</th><th>考核利润</th></tr></thead><tbody>';
+                    let h = '<div class="table-scroll"><table class="analysis-table wide center profit-tbl"><thead><tr><th>月份</th><th>可入库总产量</th><th>可实现总收入</th><th>DOL</th><th>盈亏平衡点产量</th><th>息税折旧前利润</th><th>单方利润（元）</th><th>考核利润</th></tr></thead><tbody>';
                     pStats.forEach((p, i) => {
                         h += `<tr${i === pStats.length - 1 ? ' class="analysis-latest"' : ''}><td>${safeProfitLabel(i)}</td><td>${fmtNum(p.warehouse)}</td><td>${toWan(p.realizableRevenue)}</td><td>${dolFmt(p.contributionMargin, p.fixedCost)}</td><td>${bepFmt(p.warehouse, p.contributionMargin, p.fixedCost)}</td><td>${toWan(p.ebit)}</td><td>${p.warehouse ? fmtNum(p.ebit / p.warehouse) : '—'}</td><td>${toWan(p.assessProfit)}</td></tr>`;
                     });
@@ -7948,7 +7948,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.307';
+        const APP_VERSION = 'v1.30.308';
 
         function forceRefresh() {
             if ('caches' in window) {
