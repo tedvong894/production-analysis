@@ -2297,7 +2297,7 @@
 
         <!-- 指标1：产量质量 -->
         <div class="analysis-card" data-page-node-id="AnZ1">
-            <div class="analysis-card-title"><span class="idx">1</span>产量质量</div>
+            <div class="analysis-card-title"><span class="idx">1</span>外贸产量质量</div>
             <div id="analysis-yield-table"></div>
             <div id="analysis-brief-yield"></div>
         </div>
@@ -2362,7 +2362,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.309</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.310</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -5823,7 +5823,7 @@
                     h += '</tbody></table></div>';
 
                     // 外贸产量质量明细表：每月 1 大行拆为 50板/75板 2 小行，末尾附均值行（分 50板/75板）
-                    let foreignHtml = '<div class="analysis-sub-label">外贸产量质量</div>';
+                    let foreignHtml = '<div class="analysis-sub-label">外贸分品种产量质量</div>';
                     foreignHtml += '<div class="table-scroll"><table class="analysis-table center"><thead><tr><th>月份</th><th>规格</th><th>可入库产量</th><th>产量占比</th><th>合格率</th><th>修补率</th><th>不良率</th></tr></thead><tbody>';
                     const foreignAcc = {
                         '50板': { wh: [], ratio: [], qual: [], rep: [], def: [] },
@@ -7953,7 +7953,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.309';
+        const APP_VERSION = 'v1.30.310';
 
         function forceRefresh() {
             if ('caches' in window) {
