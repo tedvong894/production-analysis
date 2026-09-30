@@ -2166,6 +2166,12 @@
                 </div>
 
                 <div id="backup-msg" style="display:none;padding:10px 12px;border-radius:8px;font-size:13px;margin-top:10px;" data-page-node-id="ckHcB6UQ9FCaQH7qqWyOQW"></div>
+
+                <div style="margin-top:16px;border-top:1px solid #eee;padding-top:14px;" data-page-node-id="abLstWrap">
+                    <div style="font-weight:600; margin-bottom:4px;" data-page-node-id="abLstTitle">每月自动备份快照</div>
+                    <div style="font-size:11px;color:#999;margin-bottom:8px;" data-page-node-id="abLstHint">应用每月自动留一份数据快照（本地 + 云端同步），万一数据被同步弄坏可一键回滚。</div>
+                    <div id="autobackup-list" style="font-size:12px;color:#555;max-height:180px;overflow:auto;" data-page-node-id="abLstBox"></div>
+                </div>
             </div>
         </div>
     </div>
@@ -7953,7 +7959,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.313';
+        const APP_VERSION = 'v1.30.314';
 
         function forceRefresh() {
             if ('caches' in window) {
@@ -8487,7 +8493,9 @@
         }
 
         // ============ 数据备份 / 导入 ============
-        const BACKUP_KEYS = [STORAGE_KEY, PARAMS_KEY, MONTHLY_KEY, YIELD_KEY, TF_KEY, ORDER_KEY];
+        // v1.30.314：每月自动备份快照键（随云端加密同步，所有设备共享、可一键回滚）
+        const AUTO_BACKUP_KEY = 'pa_auto_backups';
+        const BACKUP_KEYS = [STORAGE_KEY, PARAMS_KEY, MONTHLY_KEY, YIELD_KEY, TF_KEY, ORDER_KEY, AUTO_BACKUP_KEY];
 
         function buildBackup() {
             const data = {};
@@ -8506,6 +8514,7 @@
         function openBackupPanel() {
             const modal = document.getElementById('backup-modal');
             if (modal) modal.style.display = 'flex';
+            renderAutoBackupList();
         }
 
         // v1.30.251：顶栏「⚙️ 数据」下拉菜单（备份 / 联网 / 刷新 三合一）
@@ -8605,6 +8614,81 @@
             reader.readAsText(file);
         }
 
+        // ============ v1.30.314：每月自动备份快照 ============
+        // 应用自己按月留快照（本地 + 随云端加密同步），即使哪天同步又把数据搞坏，也能一键回滚到上个月。
+        function autoBackupMonthKey(d) {
+            const x = d || new Date();
+            return x.getFullYear() + '-' + ('0' + (x.getMonth() + 1)).slice(-2);
+        }
+        // 生成「当前月」快照（同一月只留最新一份；最多保留最近 12 个月，防无限膨胀）
+        function snapshotAutoBackup() {
+            try {
+                let store = {};
+                try { const v = localStorage.getItem(AUTO_BACKUP_KEY); if (v) store = JSON.parse(v) || {}; } catch (e) {}
+                if (!store || typeof store !== 'object') store = {};
+                const ym = autoBackupMonthKey();
+                const bundle = buildBackup();
+                bundle._meta.autoBackup = true;
+                store[ym] = bundle;
+                // 仅留最近 12 个月
+                const keys = Object.keys(store).sort();
+                while (keys.length > 12) { delete store[keys.shift()]; }
+                localStorage.setItem(AUTO_BACKUP_KEY, JSON.stringify(store));
+            } catch (e) {}
+        }
+        // 仅当本月尚无快照才生成（用于离线/本地模式的启动兜底；联网设备由首拉成功后强制刷新当月快照）
+        function maybeAutoBackup() {
+            try {
+                const ym = autoBackupMonthKey();
+                let store = {};
+                try { const v = localStorage.getItem(AUTO_BACKUP_KEY); if (v) store = JSON.parse(v) || {}; } catch (e) {}
+                if (!store || typeof store !== 'object') store = {};
+                if (!store[ym]) {
+                    snapshotAutoBackup();
+                    showToast('🗂️ 已生成本月数据快照（' + ym + '），可在「数据备份」面板回滚。');
+                }
+            } catch (e) {}
+        }
+        function renderAutoBackupList() {
+            const box = document.getElementById('autobackup-list');
+            if (!box) return;
+            let store = {};
+            try { const v = localStorage.getItem(AUTO_BACKUP_KEY); if (v) store = JSON.parse(v) || {}; } catch (e) {}
+            const keys = Object.keys(store || {}).sort().reverse();
+            if (keys.length === 0) { box.innerHTML = '<div style="color:#999;">暂无快照（每月自动生成一份）</div>'; return; }
+            box.innerHTML = '';
+            keys.forEach(ym => {
+                const b = store[ym];
+                const exp = (b && b._meta && b._meta.exportedAt) ? b._meta.exportedAt.slice(0, 10) : '—';
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #f2f2f2;';
+                row.innerHTML = '<span>📅 ' + ym + ' <span style="color:#999;">(' + exp + ')</span></span>';
+                const btn = document.createElement('button');
+                btn.className = 'btn-sm';
+                btn.style.cssText = 'font-size:12px;padding:5px 10px;background:#b3621f;color:#fff;';
+                btn.textContent = '回滚';
+                btn.onclick = function () { doRollback(ym); };
+                row.appendChild(btn);
+                box.appendChild(row);
+            });
+        }
+        // 一键回滚：用某月快照覆盖本机数据（不含 auto-backup 自身），并回推云端让所有设备同步
+        function doRollback(ym) {
+            if (!window.confirm('确定回滚到 ' + ym + ' 的快照吗？\n当前数据将被该快照覆盖（回滚后也会同步到云端）。')) return;
+            try {
+                const store = JSON.parse(localStorage.getItem(AUTO_BACKUP_KEY) || '{}') || {};
+                const b = store[ym];
+                if (!b) { showBackupMsg('warn', '❌ 未找到 ' + ym + ' 的快照'); return; }
+                const map = (b.data && typeof b.data === 'object') ? b.data : b;
+                const keys = Object.keys(map).filter(k => BACKUP_KEYS.indexOf(k) >= 0 && k !== AUTO_BACKUP_KEY);
+                if (keys.length === 0) { showBackupMsg('warn', '❌ 该快照不含可恢复数据'); return; }
+                keys.forEach(k => localStorage.setItem(k, JSON.stringify(map[k])));
+                reloadAllData();
+                showBackupMsg('ok', '✅ 已回滚到 ' + ym + ' 快照，共恢复 ' + keys.length + ' 项。正在同步云端…');
+                pushState();
+            } catch (e) { showBackupMsg('warn', '❌ 回滚失败：' + e.message); }
+        }
+
         function reloadAllData() {
             initData(); initParams(); initMonthly(); initYield(); initOrders();
             const tf = loadTimeFactor();
@@ -8666,7 +8750,7 @@
         }
         let SYNC = loadSyncCfg();
         delete SYNC.board;   // v1.30.288：不再使用固定 board（改为按账号派生）
-        let _pushTimer = null, _pulled = false, _dirty = false, _suppressDirty = false, _syncing = false, _lastSyncAt = null, _lastErr = '', _lastCloudJson = null;
+        let _pushTimer = null, _pulled = false, _dirty = false, _suppressDirty = false, _syncing = false, _lastSyncAt = null, _lastErr = '', _lastCloudJson = null, _safetyValveTripped = false;
 
         function saveSyncCfg() { try { localStorage.setItem(SYNC_CFG_KEY, JSON.stringify(SYNC)); } catch (e) {} }
 
@@ -8717,6 +8801,29 @@
                 if (o && o.months && Object.values(o.months).some(v => v && (v.records || []).length)) return true;
                 return false;
             } catch (e) { return false; }
+        }
+        // v1.30.314：统计一份载荷里「真实业务记录」总数（月度月份数 + 外贸产量记录数 + 订单记录数），
+        // 用于「防丢失安全阀」判断云端是否疑似被误清（忽略 params/auto-backup 等非业务键）。
+        function countSyncRecords(payload) {
+            let n = 0;
+            if (!payload || typeof payload !== 'object') return 0;
+            try {
+                const m = payload[MONTHLY_KEY];
+                if (m && Array.isArray(m.months)) n += m.months.length;
+                [YIELD_KEY, ORDER_KEY].forEach(k => {
+                    const obj = payload[k];
+                    if (obj && obj.months) Object.keys(obj.months).forEach(mk => {
+                        const recs = (obj.months[mk] && obj.months[mk].records) || [];
+                        n += recs.length;
+                    });
+                });
+            } catch (e) {}
+            return n;
+        }
+        // v1.30.314：防丢失安全阀判定——云端记录数远少于本机（且本机确有真实数据）→ 疑似被误清/同步损坏。
+        // 命中则绝不静默用云端覆盖本机。阈值：本地≥5 条、云端<本地 60%。
+        function cloudLooksWiped(localCnt, cloudCnt) {
+            return cloudCnt > 0 && localCnt >= 5 && cloudCnt < localCnt * 0.6;
         }
 
         // ---- v1.30.288：云端标识与密钥都取自登录会话（由邮箱+密码派生）----
@@ -8939,6 +9046,21 @@
                 if (_dirty && _pulled) { _syncing = false; pushState(); setSync('已同步', 'on'); return; }
                 if (payloadHasData(cloud)) {
                     const cloudJson = JSON.stringify(cloud);
+                    // v1.30.314：防丢失安全阀——云端数据量比本机少一大截（疑似被误清/同步损坏），
+                    // 绝不静默用云端覆盖本机；保留本机并回推云端修复，并报警提示用户。
+                    const _localCnt = countSyncRecords(collectLocalPayload());
+                    const _cloudCnt = countSyncRecords(cloud);
+                    if (cloudLooksWiped(_localCnt, _cloudCnt)) {
+                        _pulled = true; _lastSyncAt = new Date();
+                        setSync('云端异常·已保留本机', 'err');
+                        if (!_safetyValveTripped) {
+                            _safetyValveTripped = true;
+                            showToast('⚠️ 检测到云端数据量异常偏少（疑似被误清），已保留本机数据并回推云端修复。如需改用云端，请先清空本机数据再同步。');
+                        }
+                        pushState();
+                        _syncing = false;
+                        return;
+                    }
                     // 云端内容与上次完全一致：跳过「覆盖本地 + 重渲染」，避免每 30 秒白闪一次
                     if (_pulled && cloudJson === _lastCloudJson) {
                         _syncing = false; _lastSyncAt = new Date(); setSync('已同步', 'on'); return;
@@ -8955,6 +9077,7 @@
                     _dirty = false; _lastErr = '';
                     _pulled = true; _lastSyncAt = new Date();
                     _lastCloudJson = JSON.stringify(adopted);
+                    snapshotAutoBackup();   // v1.30.314：首拉/合并成功后留当月快照（含云端数据）
                     setSync('已同步', 'on');
                     if (pushMerged) pushState();
                 } else {
@@ -8962,6 +9085,7 @@
                     _pulled = true; _lastSyncAt = new Date();
                     setSync('已同步', 'on');
                     if (localHasRealData()) pushState();
+                    snapshotAutoBackup();   // v1.30.314：本机有真实数据且云端空白，也先留一份快照
                 }
             } catch (e) {
                 _lastErr = e.message || String(e);
@@ -9334,6 +9458,8 @@
             checkVersion();
             // 联网同步：安装写钩子并按配置拉起（云端为权威 + 本地编辑即推送）
             initSync();
+            // v1.30.314：每月自动备份快照（离线/本地模式启动兜底；联网设备由首拉成功后强制刷新当月快照）
+            maybeAutoBackup();
         }
 
         // 登录门禁：已登录直接进入；未登录只显示登录界面（不渲染任何数据）
