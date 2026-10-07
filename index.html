@@ -2368,7 +2368,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.313</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.315</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -4022,11 +4022,9 @@
             const def = nextYieldMonthName();
             const name = prompt('输入新月份名称（如：' + def + '）', def);
             if (!name) return;
-            if (yieldData.months[name]) { showToast('该月份已存在'); return; }
-            yieldData.currentMonth = name;
-            yieldData.months[name] = { records: [] };
-            saveYield();
-            renderYieldQuality();
+            const lmk = toLongMonthKey(name);
+            if (!lmk) { showToast('月份格式不正确'); return; }
+            ensureMonthEverywhere(lmk);
         }
 
         function deleteYieldMonth(name) {
@@ -4553,11 +4551,9 @@
             const def = nextOrderMonthName();
             const name = prompt('输入新月份名称（如：' + def + '）', def);
             if (!name) return;
-            if (orderData.months[name]) { showToast('该月份已存在'); return; }
-            orderData.currentMonth = name;
-            orderData.months[name] = { records: [], monthStartInventory: 0, monthStartOrders: 0 };
-            saveOrders();
-            renderOrderFulfillment();
+            const lmk = toLongMonthKey(name);
+            if (!lmk) { showToast('月份格式不正确'); return; }
+            ensureMonthEverywhere(lmk);
         }
 
         function deleteOrderMonth(name) {
@@ -7886,16 +7882,28 @@
             setAppMonth(name);
         }
 
+        // v1.30.315：跨模块月份同步创建。
+        // 任一模块新增月份，都在 月度数据 / 外贸产量质量 / 订单履约 三个模块同时建月份并跳转，
+        // 杜绝「在某模块加了月份、其它模块看不到」的错位。
+        function ensureMonthEverywhere(lmk) {
+            if (!lmk) return;
+            const exists = monthlyData.months.some(m => toLongMonthKey(m.name) === lmk)
+                || !!yieldData.months[lmk]
+                || !!orderData.months[lmk];
+            if (exists) {
+                showToast('该月份已存在');
+                setAppMonth(lmk);
+                return;
+            }
+            setAppMonth(lmk);
+        }
+
         function addMonth() {
             const name = prompt('请输入月份名称（如：2026年9月）：');
             if (!name) return;
             const lmk = toLongMonthKey(name);
-            if (monthlyData.months.find(m => m.name === lmk || toLongMonthKey(m.name) === lmk) || toLongMonthKey(monthlyData.currentMonth) === lmk) {
-                showToast('该月份已存在');
-                return;
-            }
-            // 新建月份并联动切换（setAppMonth 会同步创建产量质量/订单履约记录并重渲染）
-            setAppMonth(name);
+            if (!lmk) { showToast('月份格式不正确'); return; }
+            ensureMonthEverywhere(lmk);
         }
 
         function deleteMonth(name) {
@@ -7959,7 +7967,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.314';
+        const APP_VERSION = 'v1.30.315';
 
         function forceRefresh() {
             if ('caches' in window) {
