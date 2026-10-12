@@ -1938,7 +1938,7 @@
                 <select class="month-selector" id="labor-cost-month-select" onchange="changeLaborCostMonth(this.value)" data-page-node-id="ncE435pMod0yHWxKcJHcXL"></select>
             </div>
             <div style="padding:8px 12px; background:#f8f9fa; border-bottom:1px solid #eee; font-size:11px; color:#666; line-height:1.6; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;" data-page-node-id="sufvDFMY18aOTCX8AlLmUK">
-                <span data-page-node-id="bxhyTXsNqCyeNeEScls4nM">部门单价 = 金额 ÷ 可入库总产量；部门平均工资 = 金额 ÷ 人数</span>
+                <span data-page-node-id="bxhyTXsNqCyeNeEScls4nM">部门单价 = 金额 ÷ (可入库总产量×时间系数)（全月预估单价）；部门平均工资 = 金额 ÷ 人数</span>
                 <span data-page-node-id="uXSyNd0iawCmi1VqU4v6Um" style="color:#2e7d32;">✓ 已实时联动编制</span>
             </div>
             <table data-page-node-id="SsXjAQ33mITwXhaXOezilw">
@@ -2368,7 +2368,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.316</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.317</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -5025,8 +5025,11 @@
                 { name: '社保福利', count: socialCount, amount: socialAmount, editable: 'amount', countId: null, amountId: 'lc-social-amount' },
                 { name: '合计', count: totalCount, amount: totalAmount, editable: false, isTotal: true },
             ];
+            // 部门单价（元/方）= 金额 ÷ 可入库总产量；金额与可入库产量均为全月口径，
+            // 故部门单价需 ÷ 时间系数折算为「全月预估单价」（与经营利润 laborUnitPrice 口径一致；历史月 tf=1 不影响）
+            const tfUnit = getTimeFactor(monthName);
             rows.forEach(r => {
-                r.unitPrice = warehouseTotal > 0 ? r.amount / warehouseTotal : 0;
+                r.unitPrice = warehouseTotal > 0 ? (r.amount / warehouseTotal) / tfUnit : 0;
                 r.avgWage = r.count > 0 ? r.amount / r.count : 0;
             });
 
@@ -7950,7 +7953,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.316';
+        const APP_VERSION = 'v1.30.317';
 
         function forceRefresh() {
             if ('caches' in window) {
