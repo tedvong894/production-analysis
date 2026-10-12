@@ -1939,7 +1939,7 @@
             </div>
             <div style="padding:8px 12px; background:#f8f9fa; border-bottom:1px solid #eee; font-size:11px; color:#666; line-height:1.6; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;" data-page-node-id="sufvDFMY18aOTCX8AlLmUK">
                 <span data-page-node-id="bxhyTXsNqCyeNeEScls4nM">部门单价 = 金额 ÷ 可入库总产量；部门平均工资 = 金额 ÷ 人数</span>
-                <button class="btn btn-save" style="font-size:11px; padding:3px 10px; white-space:nowrap;" onclick="importAssessLaborFromMonth()" data-page-node-id="uXSyNd0iawCmi1VqU4v6Um">从月度数据调入</button>
+                <span data-page-node-id="uXSyNd0iawCmi1VqU4v6Um" style="color:#2e7d32;">✓ 已实时联动编制</span>
             </div>
             <table data-page-node-id="SsXjAQ33mITwXhaXOezilw">
                 <thead data-page-node-id="R65NtElnBM46XzX27hHSMN">
@@ -2368,7 +2368,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.315</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.316</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -4945,27 +4945,8 @@
             setAppMonth(name);
         }
 
-        function importAssessLaborFromMonth() {
-            // 按当前选中月份的月度数据重新计算考核工段人数/金额，并写入 laborCost（覆盖手动值）
-            const monthName = monthlyData.currentMonth;
-            let record = monthlyData.months.find(m => m.name === monthName);
-            if (!record) {
-                record = { name: monthName, data: createEmptyMonthData(), laborCost: createEmptyLaborCost() };
-                monthlyData.months.push(record);
-            }
-            if (!record.laborCost) record.laborCost = createEmptyLaborCost();
-            const monthData = record.data;
-
-            // 公式：金额 = (合格产量工资合计 − 质量扣款合计) × 时间系数 + 岗位工资合计 + 基本工资×编制
-            const count = calcAssessHeadcount(monthName);
-            const amount = calcAssessAmount(monthData, monthName);
-
-            record.laborCost.laborAssessCount = count;
-            record.laborCost.laborAssessAmount = amount;
-            saveMonthly();
-            renderLaborCostAnalysis();
-            showToast('已按月度数据调入考核工段人数/金额');
-        }
+        // v1.30.316：原「从月度数据调入」按钮已移除——考核工段编制/金额现实时联动「基础设置-人员编制」与月度产量，
+        // 改了编制即自动刷新人工成本表，无需手动点按钮（历史月份因按月快照隔离，互不影响）。
 
         // ============ 经营利润 ============
         const PROFIT_PRODUCTS = [
@@ -4993,10 +4974,8 @@
 
             // 考核工段金额：若已手动输入则直接用，否则自动计算
             // 公式：金额 = (合格产量工资合计 − 质量扣款合计) × 时间系数 + 岗位工资合计 + 基本工资×编制
-            let assessAmount = parseFloat(lc.laborAssessAmount) || 0;
-            if (assessAmount === 0) {
-                assessAmount = calcAssessAmount(monthData, record.name);
-            }
+            // 考核工段金额始终用公式值（与人工成本表口径一致，实时联动），不再读取手动缓存
+            const assessAmount = calcAssessAmount(monthData, record.name);
 
             const pieceAmount = parseFloat(lc.laborPieceAmount) || 0;
             const auxAmount = parseFloat(lc.laborAuxAmount) || 0;
@@ -5021,9 +5000,9 @@
             const autoAssessCount = calcAssessHeadcount(monthName);
             const autoAssessAmount = calcAssessAmount(monthData, monthName);
 
-            // 实际考核工段值：有手动值（>0）则用手动值，否则用自动值
-            const assessCount = (lc.laborAssessCount > 0) ? lc.laborAssessCount : autoAssessCount;
-            const assessAmount = (lc.laborAssessAmount > 0) ? lc.laborAssessAmount : autoAssessAmount;
+            // 考核工段编制/金额实时联动「基础设置-人员编制」与月度产量：始终取自动值，不再缓存手动值（修复改了编制表不更新的问题）
+            const assessCount = autoAssessCount;
+            const assessAmount = autoAssessAmount;
 
             const pieceCount = lc.laborPieceCount ?? 0;
             const pieceAmount = lc.laborPieceAmount ?? 0;
@@ -5039,7 +5018,7 @@
             const totalAmount = assessAmount + pieceAmount + auxAmount + mgmtAmount + socialAmount;
 
             const rows = [
-                { name: '考核工段', count: assessCount, amount: assessAmount, editable: true, countId: 'lc-assess-count', amountId: 'lc-assess-amount', placeholderCount: autoAssessCount, placeholderAmount: autoAssessAmount },
+                { name: '考核工段', count: assessCount, amount: assessAmount, editable: false, countId: null, amountId: null, placeholderCount: undefined, placeholderAmount: undefined },
                 { name: '计件工段', count: pieceCount, amount: pieceAmount, editable: true, countId: 'lc-piece-count', amountId: 'lc-piece-amount' },
                 { name: '辅助工段', count: auxCount, amount: auxAmount, editable: true, countId: 'lc-aux-count', amountId: 'lc-aux-amount' },
                 { name: '管理岗', count: mgmtCount, amount: mgmtAmount, editable: true, countId: 'lc-mgmt-count', amountId: 'lc-mgmt-amount' },
@@ -7501,6 +7480,10 @@
                 rec.positionSnapshot = buildPositionSnapshot();
                 saveMonthly();
             }
+            // 实时联动：人员编制变动后，立即刷新「人工成本」「经营利润」「驾驶舱」三处展示（原需手动点「从月度数据调入」）
+            try { if (typeof renderLaborCostAnalysis === 'function') renderLaborCostAnalysis(); } catch (e) {}
+            try { if (typeof renderProfit === 'function') renderProfit(); } catch (e) {}
+            try { if (typeof renderCockpit === 'function') renderCockpit(); } catch (e) {}
         }
 
         function calcOutputWage(deptName, qualifiedOutput, monthName) {
@@ -7967,7 +7950,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.315';
+        const APP_VERSION = 'v1.30.316';
 
         function forceRefresh() {
             if ('caches' in window) {
