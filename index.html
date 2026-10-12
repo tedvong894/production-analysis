@@ -2368,7 +2368,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.317</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.318</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -5157,10 +5157,10 @@
             const fmtMoney = v => '¥' + fmtNum(v);
 
             // 头部：数据月份下拉（联动下方 4 个数据框）+ 所选月份实际分拣天数
-            const selMonth = window.cockpitSelectedMonth || monthlyData.currentMonth || '';
+            const validNames = getValidMonthNames();
+            const selMonth = window.cockpitSelectedMonth || monthlyData.currentMonth || (validNames[0] || '');
             window.cockpitSelectedMonth = selMonth;
-            const monthOptions = monthlyData.months
-                .map(m => m.name)
+            const monthOptions = validNames
                 .sort((a, b) => {
                     const pa = parseMonthName(a), pb = parseMonthName(b);
                     return (pa.year * 12 + (pa.month - 1)) - (pb.year * 12 + (pb.month - 1));
@@ -5172,7 +5172,13 @@
             const yRecs = (yKey && yieldData.months[yKey]) ? (yieldData.months[yKey].records || []) : [];
             const sortDays = new Set(yRecs.map(r => r.date)).size;
             const metaEl = document.getElementById('cockpit-meta');
-            if (metaEl) metaEl.innerHTML = `<span>📅 数据月份：<select id="cockpit-month-select" onchange="onCockpitMonthChange(this.value)">${optsHtml}</select></span><span>📦 分拣天数：${sortDays} 天</span>`;
+            if (metaEl) {
+                if (validNames.length === 0) {
+                    metaEl.innerHTML = '<span style="color:#b3621f;font-weight:600;">⚠️ 本机月份数据异常（无有效月份）。请点 ⚙️数据 → 联网 → 拉取 从云端恢复；未登录请先登录。</span>';
+                } else {
+                    metaEl.innerHTML = `<span>📅 数据月份：<select id="cockpit-month-select" onchange="onCockpitMonthChange(this.value)">${optsHtml}</select></span><span>📦 分拣天数：${sortDays} 天</span>`;
+                }
+            }
 
             // 1) 月度数据：工段质量扣款（按所选数据月份）
             const mrec = findMonthlyRecord(selMonth);
@@ -7133,6 +7139,13 @@
             if (!p.year) return name; // 无法识别年份时原样返回
             return p.year + '年' + p.month + '月';
         }
+        // v1.30.318：只返回「名称有效可解析」的月份，过滤掉存储损坏产生的 null/空/乱码月份名，
+        // 避免界面把 null 当成月份渲染出来、让用户误以为数据全丢。
+        function getValidMonthNames() {
+            return (monthlyData.months || [])
+                .filter(m => m && typeof m.name === 'string' && m.name && parseMonthName(m.name).year)
+                .map(m => m.name);
+        }
 
         // 比较两月份键的先后：返回 <0 / 0 / >0
         function compareMonthKey(a, b) {
@@ -7343,8 +7356,8 @@
             // param-month-selector 自身不随 render 重建，这里直接重绘选项确保联动可见
             const pSel = document.getElementById('param-month-selector');
             if (pSel) {
-                pSel.innerHTML = monthlyData.months
-                    .map(m => `<option value="${m.name}"${m.name === monthlyData.currentMonth ? ' selected' : ''}>${m.name}</option>`)
+                pSel.innerHTML = getValidMonthNames()
+                    .map(n => `<option value="${n}"${n === monthlyData.currentMonth ? ' selected' : ''}>${n}</option>`)
                     .join('');
             }
             set('param-month-selector', monthlyData.currentMonth);
@@ -7953,7 +7966,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.317';
+        const APP_VERSION = 'v1.30.318';
 
         function forceRefresh() {
             if ('caches' in window) {
@@ -9454,6 +9467,15 @@
             initSync();
             // v1.30.314：每月自动备份快照（离线/本地模式启动兜底；联网设备由首拉成功后强制刷新当月快照）
             maybeAutoBackup();
+            // v1.30.318：本机月份数据损坏自检——若启动时一个有效月份都没有（如本机存储被清空/损坏、
+            // 或上次只拉到畸形数据），已登录则立即从云端拉取恢复；未登录则明确提示去登录，
+            // 杜绝界面卡在「null」空壳让用户以为数据全丢。
+            try {
+                if (getValidMonthNames().length === 0) {
+                    if (getSyncBoard()) { showToast('⚠️ 本机数据异常，正在从云端恢复…'); syncNow(false); }
+                    else showToast('⚠️ 本机月份数据异常，请登录后从云端恢复');
+                }
+            } catch (e) {}
         }
 
         // 登录门禁：已登录直接进入；未登录只显示登录界面（不渲染任何数据）
