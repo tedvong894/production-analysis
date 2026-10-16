@@ -2317,7 +2317,14 @@
 
         <!-- 指标3：人工成本 -->
         <div class="analysis-card" data-page-node-id="AnZ2b">
-            <div class="analysis-card-title"><span class="idx">3</span>人工成本</div>
+            <div style="display:flex; align-items:center; justify-content:space-between;">
+                <div class="analysis-card-title" style="margin-bottom:0;"><span class="idx">3</span>人工成本</div>
+                <div class="analysis-month-filter">
+                    <label>本表月份</label>
+                    <button type="button" id="analysis-labor-month-btn" class="analysis-month-btn" onclick="toggleLaborMonthMenu()">全部月份 ▾</button>
+                    <div id="analysis-labor-month-menu" class="analysis-month-menu" style="display:none;"></div>
+                </div>
+            </div>
             <div id="analysis-labor-table"></div>
             <div id="analysis-brief-labor"></div>
         </div>
@@ -2368,7 +2375,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.319</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.320</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -5521,10 +5528,96 @@
             renderAnalysis();
         }
 
+        // ===== v1.30.320：人工成本表独立的本表月份筛选（与模块级「分析月份」、经营成果「本表月份」三者相互独立） =====
+        // 需求：只想在「人工成本」表里隐藏某些月份（如进行中的最新月），而该模块其它表仍显示全部月份。
+        function loadLaborSelectedMonths() {
+            try {
+                const raw = localStorage.getItem('analysis_labor_selected_months');
+                if (raw === null) return null;
+                const arr = JSON.parse(raw);
+                return Array.isArray(arr) ? arr : null;
+            } catch (e) { return null; }
+        }
+        function saveLaborSelectedMonths(arr) {
+            if (arr === null) localStorage.removeItem('analysis_labor_selected_months');
+            else localStorage.setItem('analysis_labor_selected_months', JSON.stringify(arr));
+        }
+        function updateLaborMonthBtn() {
+            const btn = document.getElementById('analysis-labor-month-btn');
+            if (!btn) return;
+            const sel = loadLaborSelectedMonths();
+            btn.textContent = sel === null ? '全部月份 ▾'
+                : (sel.length === 0 ? '未选择 ▾' : ('已选 ' + sel.length + ' 个月 ▾'));
+        }
+        function toggleLaborMonthMenu() {
+            const menu = document.getElementById('analysis-labor-month-menu');
+            if (!menu) return;
+            if (menu.style.display === 'none' || !menu.style.display) {
+                renderLaborMonthMenu();
+                menu.style.display = 'block';
+            } else {
+                menu.style.display = 'none';
+            }
+        }
+        function renderLaborMonthMenu() {
+            const menu = document.getElementById('analysis-labor-month-menu');
+            if (!menu) return;
+            const allMonths = getAnalysisMonths();
+            const sel = loadLaborSelectedMonths();
+            let h = '<div class="amm-head">'
+                + '<button type="button" onclick="laborSelectAll()">全选</button>'
+                + '<button type="button" onclick="laborClearAll()">清空</button>'
+                + '<button type="button" class="amm-close" onclick="toggleLaborMonthMenu()">完成</button>'
+                + '</div>';
+            h += '<div class="amm-list">';
+            if (allMonths.length === 0) {
+                h += '<div class="amm-item" style="color:#999;cursor:default;">暂无月份</div>';
+            } else {
+                allMonths.forEach(m => {
+                    const checked = sel === null || sel.indexOf(m.name) >= 0;
+                    h += '<label class="amm-item"><input type="checkbox" value="' + m.name + '"'
+                        + (checked ? ' checked' : '')
+                        + ' onchange="laborToggleMonth()"> ' + m.name + '</label>';
+                });
+            }
+            h += '</div>';
+            menu.innerHTML = h;
+        }
+        function syncLaborSelectionFromMenu() {
+            const menu = document.getElementById('analysis-labor-month-menu');
+            if (!menu) return;
+            const checks = Array.from(menu.querySelectorAll('input[type="checkbox"]'));
+            const allChecked = checks.length > 0 && checks.every(c => c.checked);
+            const picked = checks.filter(c => c.checked).map(c => c.value);
+            saveLaborSelectedMonths(allChecked ? null : picked);
+        }
+        function laborToggleMonth() {
+            syncLaborSelectionFromMenu();
+            updateLaborMonthBtn();
+            renderAnalysis();
+        }
+        function laborSelectAll() {
+            const menu = document.getElementById('analysis-labor-month-menu');
+            if (!menu) return;
+            menu.querySelectorAll('input[type="checkbox"]').forEach(c => { c.checked = true; });
+            syncLaborSelectionFromMenu();
+            updateLaborMonthBtn();
+            renderAnalysis();
+        }
+        function laborClearAll() {
+            const menu = document.getElementById('analysis-labor-month-menu');
+            if (!menu) return;
+            menu.querySelectorAll('input[type="checkbox"]').forEach(c => { c.checked = false; });
+            syncLaborSelectionFromMenu();
+            updateLaborMonthBtn();
+            renderAnalysis();
+        }
+
         // 点击面板以外区域自动收起（模块级「分析月份」+ 经营成果「本表月份」+ 顶栏「数据」菜单）
         document.addEventListener('click', function (e) {
             [['analysis-month-menu', 'analysis-month-btn'],
              ['analysis-profit-month-menu', 'analysis-profit-month-btn'],
+             ['analysis-labor-month-menu', 'analysis-labor-month-btn'],
              ['data-menu', 'data-menu-btn'],
              ['monthly-data-menu', 'monthly-data-menu-btn']].forEach(function (pair) {
                 const menu = document.getElementById(pair[0]);
@@ -5642,6 +5735,7 @@
             const allMonths = getAnalysisMonths();
             updateAnalysisMonthBtn();
             updateProfitMonthBtn();
+            updateLaborMonthBtn();
             const selected = loadAnalysisSelectedMonths();
             const months = (selected === null) ? allMonths : allMonths.filter(m => selected.indexOf(m.name) >= 0);
             const empty = months.length === 0;
@@ -5663,6 +5757,12 @@
             const profitMonths = (profitSel === null) ? allMonths : allMonths.filter(m => profitSel.indexOf(m.name) >= 0);
             const profitLabels = profitMonths.map(labelOfMonth);
             const safeProfitLabel = i => profitLabels[i] || (profitMonths[i] ? profitMonths[i].name : '—');
+            // v1.30.320：人工成本表独立的「本表月份」筛选（与模块级「分析月份」、经营成果「本表月份」三者相互独立）
+            const laborSel = loadLaborSelectedMonths();
+            const laborMonths = (laborSel === null) ? allMonths : allMonths.filter(m => laborSel.indexOf(m.name) >= 0);
+            const laborLabels = laborMonths.map(labelOfMonth);
+            const safeLaborLabel = i => laborLabels[i] || (laborMonths[i] ? laborMonths[i].name : '—');
+            const laborEmpty = laborMonths.length === 0;
             // v1.30.197：折线迷你图 helper。灰色虚线＝基准线（扣款两表取该工段均值，工资表取 4月值），折线用中性灰连接各月数据点；
             // 数据点：高于基准＝红色，低于基准＝绿色，等于基准＝灰色。基准名（均值/4月）写在基准线右侧独立标签区，不被线穿过。
             // v1.30.218：改用 Canvas 2D 直接绘制成 2 倍尺寸 PNG <img>（函数名沿用 sparklineSvg，调用处不变）。
@@ -6087,26 +6187,28 @@
             const lEl = document.getElementById('analysis-labor-table');
             if (lEl) {
                 // 人工成本无 Chart 实例：走势为表格内 sparkline <img>（与其它表一致）
-                if (empty) {
-                    lEl.innerHTML = '<div class="analysis-empty">暂无月份数据。</div>';
+                if (laborEmpty) {
+                    lEl.innerHTML = allMonths.length === 0
+                        ? '<div class="analysis-empty">暂无月份数据。</div>'
+                        : '<div class="analysis-empty">本表未选择任何月份，请在「本表月份」中勾选需要统计的月份。</div>';
                 } else {
                     // 每月取 考核工段/计件工段 两行（calcLaborCostRows 的 rows[0]/rows[1]）
-                    const labRows = months.map(m => {
+                    const labRows = laborMonths.map(m => {
                         const lr = calcLaborCostRows(m.name);
                         return { assess: lr.rows[0], piece: lr.rows[1], wh: lr.warehouseTotal };
                     });
                     let laborHtml = '<div class="analysis-sub-label">人工成本（考核工段 / 计件工段）</div>';
                     laborHtml += '<div class="table-scroll"><table class="analysis-table center"><thead><tr><th>月份</th><th>工段</th><th>编制</th><th>总成本(元)</th><th>单方成本(元/方)</th><th>平均工资(元)</th></tr></thead><tbody>';
-                    months.forEach((m, i) => {
+                    laborMonths.forEach((m, i) => {
                         const r = labRows[i];
-                        const isLatest = i === months.length - 1;
+                        const isLatest = i === laborMonths.length - 1;
                         laborHtml += '<tr' + (isLatest ? ' class="analysis-latest"' : '') + '>';
-                        laborHtml += '<td rowspan="2">' + safeLabel(i) + '</td>';
+                        laborHtml += '<td rowspan="2">' + safeLaborLabel(i) + '</td>';
                         laborHtml += '<td>考核工段</td><td>' + fmtNum(r.assess.count) + '</td><td>' + fmtMoney(r.assess.amount) + '</td><td>' + fmtMoney(r.assess.unitPrice, 2) + '</td><td>' + fmtMoney(r.assess.avgWage) + '</td></tr>';
                         laborHtml += '<tr' + (isLatest ? ' class="analysis-latest"' : '') + '><td>计件工段</td><td>' + fmtNum(r.piece.count) + '</td><td>' + fmtMoney(r.piece.amount) + '</td><td>' + fmtMoney(r.piece.unitPrice, 2) + '</td><td>' + fmtMoney(r.piece.avgWage) + '</td></tr>';
                     });
                     // 均值行（分 考核/计件，对每个指标取跨月均值）
-                    if (months.length > 0) {
+                    if (laborMonths.length > 0) {
                         const meanOf = key => arr => arr.reduce((a, b) => a + (b[key] || 0), 0) / arr.length;
                         const mAssess = { count: meanOf('count')(labRows.map(r => r.assess)), amount: meanOf('amount')(labRows.map(r => r.assess)), unitPrice: meanOf('unitPrice')(labRows.map(r => r.assess)), avgWage: meanOf('avgWage')(labRows.map(r => r.assess)) };
                         const mPiece = { count: meanOf('count')(labRows.map(r => r.piece)), amount: meanOf('amount')(labRows.map(r => r.piece)), unitPrice: meanOf('unitPrice')(labRows.map(r => r.piece)), avgWage: meanOf('avgWage')(labRows.map(r => r.piece)) };
@@ -6115,7 +6217,7 @@
                         laborHtml += '<tr class="analysis-total avg-row"><td>计件工段</td><td>' + fmtNum(mPiece.count) + '</td><td>' + fmtMoney(mPiece.amount) + '</td><td>' + fmtMoney(mPiece.unitPrice, 2) + '</td><td>' + fmtMoney(mPiece.avgWage) + '</td></tr>';
                     }
                     // 走势行：每指标列一张 2 线迷你图（考核工段蓝 / 计件工段橙），与其它表走势行口径一致
-                    if (months.length >= 2) {
+                    if (laborMonths.length >= 2) {
                         const aCount = labRows.map(r => r.assess.count), pCount = labRows.map(r => r.piece.count);
                         const aAmount = labRows.map(r => r.assess.amount), pAmount = labRows.map(r => r.piece.amount);
                         const aUnit = labRows.map(r => r.assess.unitPrice), pUnit = labRows.map(r => r.piece.unitPrice);
@@ -7304,7 +7406,7 @@
         // 把「分析月份 / 经营成果本表月份」选择数组里的短名（9月）同步为长格式（2026年9月），
         // 避免月度月份重命名后这些选择匹配不上、相关表显示为空。
         function migrateMonthSelections() {
-            const KEYS = ['analysis_selected_months', 'analysis_profit_selected_months'];
+            const KEYS = ['analysis_selected_months', 'analysis_profit_selected_months', 'analysis_labor_selected_months'];
             const canonToName = {};
             (monthlyData.months || []).forEach(m => { canonToName[toLongMonthKey(m.name)] = m.name; });
             KEYS.forEach(k => {
@@ -7989,7 +8091,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.319';
+        const APP_VERSION = 'v1.30.320';
 
         function forceRefresh() {
             if ('caches' in window) {
