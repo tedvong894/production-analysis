@@ -2375,7 +2375,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.320</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.321</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -6238,18 +6238,25 @@
                 }
             }
 
-            // ===== 指标4：经营成果（含可入库总产量/可实现总收入/DOL/盈亏平衡点产量/息税折旧前利润(EBITDA)/单方利润/考核利润） =====
+            // ===== 指标4：经营成果（含可入库总产量/可实现总收入/收入实现率（外贸）/盈亏平衡点产量/息税折旧前利润(EBITDA)/单方利润/考核利润） =====
+            // ===== v1.30.321：经营成果表「DOL」列替换为「收入实现率（外贸）」＝累积发货 ÷ 外贸可入库产量（全月预估），分母为 0 → — =====
             const pEl = document.getElementById('analysis-profit-table');
             if (pEl) {
                 if (empty || profitMonths.length === 0) {
                     pEl.innerHTML = '<div class="analysis-empty">本表未选择任何月份，请在「本表月份」中勾选需要统计的月份。</div>';
                 } else {
                     // 经营成果统一采用全月预估值：非历史月份=实时值×时间系数；历史月份tf=1无差。
+                    // 收入实现率（外贸）= 累积发货 ÷ 外贸可入库产量：二者取自订单履约链式推导与产量质量统计
+                    const orderChain = computeOrderChain();
+                    const chainKeyFor = name => Object.keys(orderChain).find(k => k === name || (name && name.endsWith(k)) || (k && k.endsWith(name))) || name;
                     // 固定成本(人工+管理费)/资金成本保持满额(全月预估=实时×tf 已恢复满额，不再单独÷tf)。
                     const pStats = profitMonths.map(m => {
                         const rt = getRealTimeProfit(m.name);
                         const full = calcMonthProfit(m.name);
                         const tfM = rt.tf;
+                        const ck = chainKeyFor(m.name);
+                        const sumShip = (orderChain[ck] && orderChain[ck].sumShip) || 0; // 累积发货
+                        const foreignWhFull = getMonthYieldStats(m.name).warehouse * tfM; // 外贸可入库产量(全月预估)
                         return {
                             ...full,
                             warehouse: full.warehouseTotal * tfM,           // 全月产量
@@ -6259,6 +6266,8 @@
                             fixedCost: full.fixedCost,                     // 满额固定成本(人工+管理费)
                             fundCost: full.fundCost,                       // 满额资金成本
                             assessProfit: rt.assess * tfM,                  // 全月预估 考核利润
+                            ship: sumShip,                                 // 累积发货
+                            foreignWh: foreignWhFull,                      // 外贸可入库产量(全月预估)
                             labor: calcLaborCostRows(m.name)
                         };
                     });
@@ -6268,15 +6277,14 @@
                         if (!cm) return '—';
                         return fmtNum(wh * fc / cm);
                     };
-                    // DOL＝边际贡献/(边际贡献－固定成本)；分母为 0 → —（保留2位小数）
-                    const dolFmt = (cm, fc) => {
-                        const denom = cm - fc;
-                        if (!denom) return '—';
-                        return (cm / denom).toFixed(2);
+                    // 收入实现率（外贸）＝累积发货 ÷ 外贸可入库产量（全月预估）；分母为 0 → —（保留1位小数百分比）
+                    const revRateFmt = (ship, wh) => {
+                        if (!wh) return '—';
+                        return (ship / wh * 100).toFixed(1) + '%';
                     };
-                    let h = '<div class="table-scroll"><table class="analysis-table wide center profit-tbl"><thead><tr><th>月份</th><th>可入库总产量</th><th>可实现总收入</th><th>DOL</th><th>盈亏平衡点产量</th><th>息税折旧前利润</th><th>单方利润（元）</th><th>考核利润</th></tr></thead><tbody>';
+                    let h = '<div class="table-scroll"><table class="analysis-table wide center profit-tbl"><thead><tr><th>月份</th><th>可入库总产量</th><th>可实现总收入</th><th>收入实现率（外贸）</th><th>盈亏平衡点产量</th><th>息税折旧前利润</th><th>单方利润（元）</th><th>考核利润</th></tr></thead><tbody>';
                     pStats.forEach((p, i) => {
-                        h += `<tr${i === pStats.length - 1 ? ' class="analysis-latest"' : ''}><td>${safeProfitLabel(i)}</td><td>${fmtNum(p.warehouse)}</td><td>${toWan(p.realizableRevenue)}</td><td>${dolFmt(p.contributionMargin, p.fixedCost)}</td><td>${bepFmt(p.warehouse, p.contributionMargin, p.fixedCost)}</td><td>${toWan(p.ebit)}</td><td>${p.warehouse ? fmtNum(p.ebit / p.warehouse) : '—'}</td><td>${toWan(p.assessProfit)}</td></tr>`;
+                        h += `<tr${i === pStats.length - 1 ? ' class="analysis-latest"' : ''}><td>${safeProfitLabel(i)}</td><td>${fmtNum(p.warehouse)}</td><td>${toWan(p.realizableRevenue)}</td><td>${revRateFmt(p.ship, p.foreignWh)}</td><td>${bepFmt(p.warehouse, p.contributionMargin, p.fixedCost)}</td><td>${toWan(p.ebit)}</td><td>${p.warehouse ? fmtNum(p.ebit / p.warehouse) : '—'}</td><td>${toWan(p.assessProfit)}</td></tr>`;
                     });
                     const n = pStats.length;
                     const avg = arr => n ? arr.reduce((s, v) => s + v, 0) / n : 0;
@@ -6285,33 +6293,27 @@
                     const avgRevenue = avg(pStats.map(p => p.realizableRevenue));
                     const avgEbit = avg(pStats.map(p => p.ebit));
                     const avgAssess = avg(pStats.map(p => p.assessProfit));
-                    // 均值行 DOL：有效月份（分母非0）取平均
-                    const dolVals = pStats.map(p => {
-                        const denom = p.contributionMargin - p.fixedCost;
-                        return denom ? p.contributionMargin / denom : null;
-                    }).filter(v => v !== null);
-                    const avgDolNum = dolVals.length ? dolVals.reduce((s, v) => s + v, 0) / dolVals.length : 0;
-                    const avgDol = dolVals.length ? avgDolNum.toFixed(2) : '—';
+                    // 均值行 收入实现率（外贸）：有效月份（分母非0）取平均
+                    const revRateVals = pStats.map(p => p.foreignWh ? p.ship / p.foreignWh : null).filter(v => v !== null);
+                    const avgRevRateNum = revRateVals.length ? revRateVals.reduce((s, v) => s + v, 0) / revRateVals.length : 0;
+                    const avgRevRate = revRateVals.length ? (avgRevRateNum * 100).toFixed(1) + '%' : '—';
                     // 均值行盈亏平衡点产量：有效月份取平均
                     const bepVals = pStats.map(p => {
                         return p.contributionMargin ? p.warehouse * p.fixedCost / p.contributionMargin : null;
                     }).filter(v => v !== null);
                     const avgBepNum = bepVals.length ? bepVals.reduce((s, v) => s + v, 0) / bepVals.length : 0;
                     const avgBep = bepVals.length ? fmtNum(avgBepNum) : '—';
-                    h += `<tr class="analysis-total avg-row"><td>均值</td><td>${fmtNum(avgWarehouse)}</td><td>${toWan(avgRevenue)}</td><td>${avgDol}</td><td>${avgBep}</td><td>${toWan(avgEbit)}</td><td>${avgWarehouse ? fmtNum(avgEbit / avgWarehouse) : '—'}</td><td>${toWan(avgAssess)}</td></tr>`;
+                    h += `<tr class="analysis-total avg-row"><td>均值</td><td>${fmtNum(avgWarehouse)}</td><td>${toWan(avgRevenue)}</td><td>${avgRevRate}</td><td>${avgBep}</td><td>${toWan(avgEbit)}</td><td>${avgWarehouse ? fmtNum(avgEbit / avgWarehouse) : '—'}</td><td>${toWan(avgAssess)}</td></tr>`;
                     // 走势行：每列一条折线迷你图，基准线＝该列均值（与「均值」行口径一致）
                     if (n >= 2) {
-                        const dolSparkVals = pStats.map(p => {
-                            const denom = p.contributionMargin - p.fixedCost;
-                            return denom ? p.contributionMargin / denom : 0;
-                        });
+                        const revRateSparkVals = pStats.map(p => p.foreignWh ? p.ship / p.foreignWh : 0);
                         const bepSparkVals = pStats.map(p => (p.contributionMargin ? p.warehouse * p.fixedCost / p.contributionMargin : 0));
                         const profitPerUnitVals = pStats.map(p => p.warehouse ? p.ebit / p.warehouse : 0);
                         const avgProfitPerUnit = avgWarehouse ? avgEbit / avgWarehouse : 0;
                         const sparkCols = [
                             { vals: pStats.map(p => p.warehouse), base: avgWarehouse },
                             { vals: pStats.map(p => p.realizableRevenue), base: avgRevenue },
-                            { vals: dolSparkVals, base: avgDolNum },
+                            { vals: revRateSparkVals, base: avgRevRateNum },
                             { vals: bepSparkVals, base: avgBepNum },
                             { vals: pStats.map(p => p.ebit), base: avgEbit },
                             { vals: pStats.map(p => p.assessProfit), base: avgAssess },
@@ -6330,7 +6332,9 @@
                     const cumCM = sum(pStats.map(p => p.contributionMargin));
                     const cumFC = sum(pStats.map(p => p.fixedCost));
                     const cumFund = sum(pStats.map(p => p.fundCost || 0));
-                    h += `<tr class="analysis-total cum-row"><td>累计</td><td>${fmtNum(cumWarehouse)}</td><td>${toWan(cumRevenue)}</td><td>${dolFmt(cumCM, cumFC)}</td><td>${bepFmt(cumWarehouse, cumCM, cumFC)}</td><td>${toWan(cumEbit)}</td><td>${cumWarehouse ? fmtNum(cumEbit / cumWarehouse) : '—'}</td><td>${toWan(cumAssess)}</td></tr>`;
+                    const cumShip = sum(pStats.map(p => p.ship));
+                    const cumForeignWh = sum(pStats.map(p => p.foreignWh));
+                    h += `<tr class="analysis-total cum-row"><td>累计</td><td>${fmtNum(cumWarehouse)}</td><td>${toWan(cumRevenue)}</td><td>${revRateFmt(cumShip, cumForeignWh)}</td><td>${bepFmt(cumWarehouse, cumCM, cumFC)}</td><td>${toWan(cumEbit)}</td><td>${cumWarehouse ? fmtNum(cumEbit / cumWarehouse) : '—'}</td><td>${toWan(cumAssess)}</td></tr>`;
                     h += '</tbody></table></div>';
                     pEl.innerHTML = h;
                 }
@@ -8091,7 +8095,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.320';
+        const APP_VERSION = 'v1.30.321';
 
         function forceRefresh() {
             if ('caches' in window) {
