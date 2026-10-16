@@ -2337,13 +2337,13 @@
         </div>
     </div>
 
-    <!-- 月度分析页：未完成月份（非历史月份）的月度内数据分析，分析月份自动取 app 最新月份 -->
+    <!-- 月度分析页：月度内数据分析，分析月份可自由选择历史月份（与其它模块一致），默认取 app 最新月份 -->
     <div class="page" id="page-manalysis">
         <div class="analysis-header-bar">
             <div class="analysis-header-title">月度分析</div>
             <div class="analysis-month-filter">
                 <label>分析月份</label>
-                <span id="manalysis-month-tag" style="font-size:14px;color:#333;font-weight:600;">—</span>
+                <select id="manalysis-month-select" onchange="onManalysisMonthChange(this.value)"></select>
             </div>
         </div>
 
@@ -2368,7 +2368,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.318</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.319</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -6241,7 +6241,7 @@
         }
 
         // ============ 月度分析（未完成月份的月度内数据分析） ============
-        // v1.30.273：定位「未完成月份/非历史月份」的月度内分析，分析月份自动取 app 最新月份（下月自动变 10月…）。
+        // v1.30.273：定位「未完成月份/非历史月份」的月度内分析；v1.30.319 起分析月份改为可自由选择历史月份（与其它模块一致），默认取 app 最新月份。
         // 数据源 = 「外贸产量质量」模块每日明细；与该页同规则：同一天第 3 条起的记录为修正数据（黄色行）。
         // v1.30.274 修正数据口径：黄色修正条**计入指标2阶段比较**（各阶段加总算进去），**不计入指标1图表**（不单独加数据点）。
         // 指标3 团队表现（扣款占比/扣款绝对值）：工段质量扣款目前仅整月汇总，待支持按旬录入后开放（页面已预留）。
@@ -6255,10 +6255,25 @@
         }
         const MANALYSIS_PHASE_NAMES = ['上旬', '中旬', '下旬'];
 
-        // 分析月份（app 最新月份）的每日明细：仅 50板/75板。
+        // v1.30.319：月度分析可自由选择历史月份（与其它模块一致）。默认取最新月，选择持久化到 localStorage。
+        function getManalysisSelMonth() {
+            let sel = window.manalysisSelectedMonth;
+            if (!sel) { try { sel = localStorage.getItem('manalysis_sel_month') || ''; } catch (e) {} }
+            const valid = getValidMonthNames();
+            if (sel && valid.indexOf(sel) >= 0) { window.manalysisSelectedMonth = sel; return sel; }
+            const latest = getLatestMonth();
+            window.manalysisSelectedMonth = latest;
+            return latest;
+        }
+        function onManalysisMonthChange(v) {
+            window.manalysisSelectedMonth = v;
+            try { localStorage.setItem('manalysis_sel_month', v || ''); } catch (e) {}
+            renderMonthAnalysis();
+        }
+        // 分析月份（默认 app 最新月份，可切换为历史月份）的每日明细：仅 50板/75板。
         // recs = 剔除黄色修正行后的明细（供指标1图表）；allRecs = 全部明细含修正行（供指标2阶段比较）。
         function getManalysisRecords() {
-            const monthName = getLatestMonth();
+            const monthName = getManalysisSelMonth();
             if (!monthName) return { monthName: '', recs: [], allRecs: [] };
             const yk = findYieldMonthKey(monthName);
             const allRecs = ((yk && yieldData.months[yk] && yieldData.months[yk].records) || [])
@@ -6286,10 +6301,18 @@
 
         function renderMonthAnalysis() {
             const cEl = document.getElementById('manalysis-yield-chart');
-            const tagEl = document.getElementById('manalysis-month-tag');
+            const selMonth = getManalysisSelMonth();
             const { monthName, recs, allRecs } = getManalysisRecords();
             const shortLabel = monthName ? (parseMonthName(monthName).month + '月') : '—';
-            if (tagEl) tagEl.textContent = monthName || '暂无月份';
+            const selEl = document.getElementById('manalysis-month-select');
+            if (selEl) {
+                selEl.innerHTML = getValidMonthNames()
+                    .sort((a, b) => {
+                        const pa = parseMonthName(a), pb = parseMonthName(b);
+                        return (pa.year * 12 + (pa.month - 1)) - (pb.year * 12 + (pb.month - 1));
+                    })
+                    .map(n => `<option value="${n}"${n === selMonth ? ' selected' : ''}>${n}</option>`).join('');
+            }
             const emptyTip = monthName
                 ? '「' + monthName + '」暂无每日明细数据，请先到「外贸产量质量」模块录入。'
                 : '暂无月份数据。';
@@ -6374,7 +6397,7 @@
             const el = document.getElementById('manalysis-team-chart');
             if (!el) return;
             disposeAnalysisChart('manalysisTeam');
-            const monthName = getLatestMonth();
+            const monthName = getManalysisSelMonth();
             if (!monthName) {
                 el.innerHTML = '<div class="analysis-empty">暂无月份数据。</div>';
                 return;
@@ -7966,7 +7989,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.318';
+        const APP_VERSION = 'v1.30.319';
 
         function forceRefresh() {
             if ('caches' in window) {
