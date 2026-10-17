@@ -2375,7 +2375,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.321</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.322</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -6239,7 +6239,8 @@
             }
 
             // ===== 指标4：经营成果（含可入库总产量/可实现总收入/收入实现率（外贸）/盈亏平衡点产量/息税折旧前利润(EBITDA)/单方利润/考核利润） =====
-            // ===== v1.30.321：经营成果表「DOL」列替换为「收入实现率（外贸）」＝累积发货 ÷ 外贸可入库产量（全月预估），分母为 0 → — =====
+            // ===== v1.30.321：经营成果表「DOL」列替换为「收入实现率（外贸）」＝累积发货 ÷ 外贸可入库产量 =====
+            // ===== v1.30.322：修复口径——分子(累积发货)与分母(外贸可入库产量)均取实际累计值，分母不再×时间系数 =====
             const pEl = document.getElementById('analysis-profit-table');
             if (pEl) {
                 if (empty || profitMonths.length === 0) {
@@ -6255,8 +6256,10 @@
                         const full = calcMonthProfit(m.name);
                         const tfM = rt.tf;
                         const ck = chainKeyFor(m.name);
-                        const sumShip = (orderChain[ck] && orderChain[ck].sumShip) || 0; // 累积发货
-                        const foreignWhFull = getMonthYieldStats(m.name).warehouse * tfM; // 外贸可入库产量(全月预估)
+                        const sumShip = (orderChain[ck] && orderChain[ck].sumShip) || 0; // 累积发货(实际累计，未放时间系数)
+                        // 外贸可入库产量必须与「累积发货」同口径：均取实际累计值，不放时间系数。
+                        // 若此处×tfM 而分子不放，10月(进行中 tfM>1)会虚增分母、把实现率压低（如仅 36%）。
+                        const foreignWh = getMonthYieldStats(m.name).warehouse; // 外贸可入库产量(实际累计)
                         return {
                             ...full,
                             warehouse: full.warehouseTotal * tfM,           // 全月产量
@@ -6266,8 +6269,8 @@
                             fixedCost: full.fixedCost,                     // 满额固定成本(人工+管理费)
                             fundCost: full.fundCost,                       // 满额资金成本
                             assessProfit: rt.assess * tfM,                  // 全月预估 考核利润
-                            ship: sumShip,                                 // 累积发货
-                            foreignWh: foreignWhFull,                      // 外贸可入库产量(全月预估)
+                            ship: sumShip,                                 // 累积发货(实际累计)
+                            foreignWh: foreignWh,                          // 外贸可入库产量(实际累计，与累积发货同口径)
                             labor: calcLaborCostRows(m.name)
                         };
                     });
@@ -8095,7 +8098,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.321';
+        const APP_VERSION = 'v1.30.322';
 
         function forceRefresh() {
             if ('caches' in window) {
