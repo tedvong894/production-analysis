@@ -2375,7 +2375,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.322</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.323</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -6465,7 +6465,8 @@
                             options: {
                                 responsive: true,
                                 maintainAspectRatio: false,
-                                interaction: { mode: 'index', intersect: false },
+                                interaction: { mode: 'index', intersect: true },
+                                events: ['click'],   // v1.30.323：tooltip 仅点击数据点触发；鼠标划过不显示
                                 plugins: {
                                     legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } }
                                 },
@@ -6565,7 +6566,8 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    interaction: { mode: 'index', intersect: false },
+                    interaction: { mode: 'index', intersect: true },
+                    events: ['click'],   // v1.30.323：tooltip 仅点击数据点触发；鼠标划过不显示
                     plugins: {
                         legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } },
                         tooltip: {
@@ -8098,7 +8100,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.322';
+        const APP_VERSION = 'v1.30.323';
 
         function forceRefresh() {
             if ('caches' in window) {
