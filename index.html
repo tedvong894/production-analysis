@@ -2375,7 +2375,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.323</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.324</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -6408,6 +6408,28 @@
             return { 产量: y, 修补: rep, 不良: def };
         }
 
+        // v1.30.324：月度分析趋势图 tooltip 点击切换（点一次显示，再点同一点/点空白隐藏；鼠标划过不显示）
+        function paToggleTip(chart, evt) {
+            if (!chart) return;
+            const els = chart.getElementsAtEventForMode(evt, 'index', { intersect: true }, true);
+            const idx = (els && els.length) ? els[0].index : null;
+            const prev = chart._paTipIdx;
+            if (idx === null || prev === idx) {
+                // 点空白 或 点同一点再次 → 隐藏
+                chart._paTipIdx = null;
+                chart.setActiveElements([]);
+                chart.tooltip.setActiveElements([], { x: 0, y: 0 });
+                chart.update();
+            } else {
+                // 显示该 index（index 模式：同列所有数据集一起高亮）
+                const active = chart.data.datasets.map((_, di) => ({ datasetIndex: di, index: idx }));
+                chart._paTipIdx = idx;
+                chart.setActiveElements(active);
+                chart.tooltip.setActiveElements(active, { x: evt.x, y: evt.y });
+                chart.update();
+            }
+        }
+
         function renderMonthAnalysis() {
             const cEl = document.getElementById('manalysis-yield-chart');
             const selMonth = getManalysisSelMonth();
@@ -6467,6 +6489,7 @@
                                 maintainAspectRatio: false,
                                 interaction: { mode: 'index', intersect: true },
                                 events: ['click'],   // v1.30.323：tooltip 仅点击数据点触发；鼠标划过不显示
+                                onClick: function (evt, _els, chart) { paToggleTip(chart, evt); },   // v1.30.324：点同一点切换隐藏
                                 plugins: {
                                     legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } }
                                 },
@@ -6568,6 +6591,7 @@
                     maintainAspectRatio: false,
                     interaction: { mode: 'index', intersect: true },
                     events: ['click'],   // v1.30.323：tooltip 仅点击数据点触发；鼠标划过不显示
+                    onClick: function (evt, _els, chart) { paToggleTip(chart, evt); },   // v1.30.324：点同一点切换隐藏
                     plugins: {
                         legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } },
                         tooltip: {
@@ -8100,7 +8124,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.323';
+        const APP_VERSION = 'v1.30.324';
 
         function forceRefresh() {
             if ('caches' in window) {
