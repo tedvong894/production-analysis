@@ -120,6 +120,8 @@
             bottom: 0;
             left: 0;
             right: 0;
+            width: 100%;
+            box-sizing: border-box;
             background: #fff;
             border-top: 1px solid #eee;
             display: flex;
@@ -2375,7 +2377,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.324</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.325</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -8124,7 +8126,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.324';
+        const APP_VERSION = 'v1.30.325';
 
         function forceRefresh() {
             if ('caches' in window) {
@@ -9635,6 +9637,56 @@
                 }
             } catch (e) {}
         }
+
+        // v1.30.325：移动端横屏/旋转/地址栏收放时，底部 fixed 导航偶尔被渲染到页面中间。
+        // 根因：旋转瞬间视口尺寸仍沿用旧值，fixed 元素按旧视口定位后不会自动复位（iOS/部分 WebView 特性）。
+        // 处理：视口稳定后把底栏节点原样重插一次，强制浏览器按当前视口重算 fixed 位置（同一节点，事件/状态不丢）。
+        function reanchorTabBar() {
+            try {
+                var bar = document.querySelector('.tab-bar');
+                if (!bar || !bar.parentNode) return;
+                var next = bar.nextSibling;
+                bar.parentNode.removeChild(bar);
+                bar.parentNode.insertBefore(bar, next);
+            } catch (e) {}
+        }
+        // 仅当底栏明显脱离视口底部时才重排，避免正常滚动下反复重插
+        function checkTabBar() {
+            try {
+                var bar = document.querySelector('.tab-bar');
+                if (!bar) return;
+                if (getComputedStyle(bar).display === 'none') return;   // PDF 导出等隐藏场景跳过
+                var ae = document.activeElement;
+                if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return; // 键盘弹起时不误判
+                var r = bar.getBoundingClientRect();
+                var vv = window.visualViewport;
+                var bottomEdge = vv ? (vv.offsetTop + vv.height) : window.innerHeight;
+                if (Math.abs(bottomEdge - r.bottom) > 4) reanchorTabBar();
+            } catch (e) {}
+        }
+        (function () {
+            var timer = null;
+            function debounced(fn, delay) {
+                var t = null;
+                return function () {
+                    if (t) clearTimeout(t);
+                    t = setTimeout(fn, delay);
+                };
+            }
+            var onScroll = debounced(checkTabBar, 220);
+            window.addEventListener('orientationchange', function () {
+                reanchorTabBar();
+                setTimeout(reanchorTabBar, 250);   // iOS 旋转后视口稍晚才稳定，多点兜底
+                setTimeout(checkTabBar, 700);
+            }, { passive: true });
+            window.addEventListener('resize', debounced(checkTabBar, 120), { passive: true });
+            window.addEventListener('scroll', onScroll, { passive: true });
+            window.addEventListener('load', function () { setTimeout(checkTabBar, 80); }, { passive: true });
+            window.addEventListener('pageshow', function (e) { if (e.persisted) setTimeout(checkTabBar, 80); }, { passive: true });
+            if (window.visualViewport) {
+                window.visualViewport.addEventListener('resize', debounced(checkTabBar, 120), { passive: true });
+            }
+        })();
 
         // 登录门禁：已登录直接进入；未登录只显示登录界面（不渲染任何数据）
         if (isAuthed()) { _afterAuthSuccess(); } else { showAuthGate(); }
