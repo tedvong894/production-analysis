@@ -2377,7 +2377,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.325</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.326</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -8126,7 +8126,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.325';
+        const APP_VERSION = 'v1.30.326';
 
         function forceRefresh() {
             if ('caches' in window) {
@@ -9638,53 +9638,44 @@
             } catch (e) {}
         }
 
-        // v1.30.325：移动端横屏/旋转/地址栏收放时，底部 fixed 导航偶尔被渲染到页面中间。
-        // 根因：旋转瞬间视口尺寸仍沿用旧值，fixed 元素按旧视口定位后不会自动复位（iOS/部分 WebView 特性）。
-        // 处理：视口稳定后把底栏节点原样重插一次，强制浏览器按当前视口重算 fixed 位置（同一节点，事件/状态不丢）。
-        function reanchorTabBar() {
-            try {
-                var bar = document.querySelector('.tab-bar');
-                if (!bar || !bar.parentNode) return;
-                var next = bar.nextSibling;
-                bar.parentNode.removeChild(bar);
-                bar.parentNode.insertBefore(bar, next);
-            } catch (e) {}
-        }
-        // 仅当底栏明显脱离视口底部时才重排，避免正常滚动下反复重插
-        function checkTabBar() {
+        // v1.30.326：手机横屏底部导航（dock）错位/消失修复。
+        // 根因：fixed 底栏 bottom:0 锚定"布局视口"底部；移动端（iOS/WebView）横屏时布局视口常比可见区高
+        // （底部浏览器工具栏占区），底栏被压到可见区之下→"消失"；旋转瞬间视口尺寸沿用旧值→"跑到中间"。
+        // 修复：用 visualViewport 把底栏按"可视视口底部"重新钉住（translateY 补偿布局/可视视口的纵向偏差）。
+        function pinTabBar() {
             try {
                 var bar = document.querySelector('.tab-bar');
                 if (!bar) return;
-                if (getComputedStyle(bar).display === 'none') return;   // PDF 导出等隐藏场景跳过
+                if (getComputedStyle(bar).display === 'none') { bar.style.transform = ''; return; } // PDF 导出等隐藏场景
                 var ae = document.activeElement;
-                if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return; // 键盘弹起时不误判
-                var r = bar.getBoundingClientRect();
+                if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) {
+                    bar.style.transform = ''; return; // 键盘弹起时不强行上钉，维持原行为避免压住输入框
+                }
                 var vv = window.visualViewport;
-                var bottomEdge = vv ? (vv.offsetTop + vv.height) : window.innerHeight;
-                if (Math.abs(bottomEdge - r.bottom) > 4) reanchorTabBar();
+                if (!vv) { bar.style.transform = ''; return; }
+                // 可视视口底相对布局视口底的偏移：>0 表示可视区比布局区矮（底部工具栏/键盘收起残留），需把栏上移贴可视底
+                var delta = vv.offsetTop + vv.height - window.innerHeight;
+                bar.style.transform = delta ? ('translateY(' + delta + 'px)') : 'translateY(0)';
             } catch (e) {}
         }
         (function () {
-            var timer = null;
-            function debounced(fn, delay) {
-                var t = null;
-                return function () {
-                    if (t) clearTimeout(t);
-                    t = setTimeout(fn, delay);
-                };
+            var t = null;
+            function debounced() {
+                if (t) clearTimeout(t);
+                t = setTimeout(pinTabBar, 100);
             }
-            var onScroll = debounced(checkTabBar, 220);
             window.addEventListener('orientationchange', function () {
-                reanchorTabBar();
-                setTimeout(reanchorTabBar, 250);   // iOS 旋转后视口稍晚才稳定，多点兜底
-                setTimeout(checkTabBar, 700);
+                pinTabBar();
+                setTimeout(pinTabBar, 250);   // iOS 旋转后视口稍晚才稳定，多点兜底
+                setTimeout(pinTabBar, 600);
             }, { passive: true });
-            window.addEventListener('resize', debounced(checkTabBar, 120), { passive: true });
-            window.addEventListener('scroll', onScroll, { passive: true });
-            window.addEventListener('load', function () { setTimeout(checkTabBar, 80); }, { passive: true });
-            window.addEventListener('pageshow', function (e) { if (e.persisted) setTimeout(checkTabBar, 80); }, { passive: true });
+            window.addEventListener('resize', debounced, { passive: true });
+            window.addEventListener('scroll', debounced, { passive: true });
+            window.addEventListener('load', function () { setTimeout(pinTabBar, 60); }, { passive: true });
+            window.addEventListener('pageshow', function (e) { if (e.persisted) setTimeout(pinTabBar, 60); }, { passive: true });
             if (window.visualViewport) {
-                window.visualViewport.addEventListener('resize', debounced(checkTabBar, 120), { passive: true });
+                window.visualViewport.addEventListener('resize', debounced, { passive: true });
+                window.visualViewport.addEventListener('scroll', debounced, { passive: true });
             }
         })();
 
