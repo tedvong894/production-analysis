@@ -2377,7 +2377,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.326</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.327</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -3871,6 +3871,7 @@
             if (hasMonthly && rec) {
                 return {
                     产量: parseFloat(rec.data['产量']?.[spec]) || 0,
+                    合格: parseFloat(rec.data['合格']?.[spec]) || 0,
                     修补: parseFloat(rec.data['修补']?.[spec]) || 0,
                     不良: parseFloat(rec.data['不良']?.[spec]) || 0
                 };
@@ -3914,17 +3915,14 @@
                 if (!record.data['合格']) record.data['合格'] = {};
                 if (!record.data['修补']) record.data['修补'] = {};
                 if (!record.data['不良']) record.data['不良'] = {};
-                // 仅同步 产量/合格/修补；不良 = 产量−合格−修补 由本地自动计算
-                ['产量', '合格', '修补'].forEach(row => {
+                // v1.30.327：同步 产量/合格/修补/不良（不良直接取外贸模块的不良字段，与产量质量模块、月度分析、经营分析口径统一；不再派生 产量−合格−修补）
+                ['产量', '合格', '修补', '不良'].forEach(row => {
                     /* 外贸自动带入始终优先，不保留手动覆盖 */
                     const oldVal = parseFloat(record.data[row][col]) || 0;
                     const newVal = Math.round((s[row] || 0) * 10) / 10;
                     if (Math.abs(oldVal - newVal) > 1e-9) changed = true;
                     record.data[row][col] = newVal;
                 });
-                const defect = Math.round((record.data['产量'][col] - record.data['合格'][col] - record.data['修补'][col]) * 10) / 10;
-                if (Math.abs((parseFloat(record.data['不良'][col]) || 0) - defect) > 1e-9) changed = true;
-                record.data['不良'][col] = defect;
             });
             return changed;
         }
@@ -5635,7 +5633,7 @@
         // v1.30.221：优先读取「月度数据」模块（批量编辑录入）的 50板/75板；月度数据无值时才回退「外贸产量质量」每日明细累计
         // 原因：每日明细累计（尤其历史月份）可能残缺/不准，用户要求以月度数据批量编辑输入为准
         function getMonthYieldStats(monthName) {
-            let sYield = 0, sDef = 0, sRep = 0;
+            let sYield = 0, sDef = 0, sRep = 0, sQual = 0;
             const rec = findMonthlyRecord(monthName);
             const hasMonthly = !!(rec && rec.data && ['50板', '75板'].some(col =>
                 (parseFloat(rec.data['产量']?.[col]) || 0) > 0 ||
@@ -5644,6 +5642,7 @@
             if (hasMonthly) {
                 ['50板', '75板'].forEach(col => {
                     sYield += parseFloat(rec.data['产量']?.[col]) || 0;
+                    sQual += parseFloat(rec.data['合格']?.[col]) || 0;
                     sDef += parseFloat(rec.data['不良']?.[col]) || 0;
                     sRep += parseFloat(rec.data['修补']?.[col]) || 0;
                 });
@@ -5652,16 +5651,18 @@
                 if (yk && yieldData.months[yk]) {
                     const recs = (yieldData.months[yk].records || []).filter(r => r.spec === '50板' || r.spec === '75板');
                     sYield = recs.reduce((s, r) => s + (parseFloat(r.yieldQty) || 0), 0);
+                    sQual = recs.reduce((s, r) => s + (parseFloat(r.qualified) || 0), 0);
                     sDef = recs.reduce((s, r) => s + (parseFloat(r.defect) || 0), 0);
                     sRep = recs.reduce((s, r) => s + (parseFloat(r.repair) || 0), 0);
                 }
             }
             // v1.30.221：取值限制在 [0, 分拣量]，防止负不良导致外贸可入库 > 外贸分拣量
             const warehouse = safeGood(sYield, sDef); // 可入库总产量（产量−不良）
-            const qual = sYield > 0 ? (sYield - sDef - sRep) / sYield * 100 : 0;
+            // v1.30.327：合格率用直接「合格」字段（与外贸产量质量模块口径统一），不再派生 产量−不良−修补
+            const qual = sYield > 0 ? sQual / sYield * 100 : 0;
             const defectRate = sYield > 0 ? sDef / sYield * 100 : 0;
             const repairRate = sYield > 0 ? sRep / sYield * 100 : 0;
-            return { sYield, sDef, sRep, warehouse, qual, defectRate, repairRate };
+            return { sYield, sDef, sRep, sQual, warehouse, qual, defectRate, repairRate };
         }
 
         // 单月全部产品可入库总产量（50板+75板+国内板+砌块）
@@ -5928,8 +5929,9 @@
                         const scale = tf > 1 ? tf : 1;
                         const s50r = getForeignYieldSpecStats(m.name, '50板');
                         const s75r = getForeignYieldSpecStats(m.name, '75板');
-                        const s50 = { 产量: s50r.产量 * scale, 修补: s50r.修补 * scale, 不良: s50r.不良 * scale };
-                        const s75 = { 产量: s75r.产量 * scale, 修补: s75r.修补 * scale, 不良: s75r.不良 * scale };
+                        // v1.30.327：合格率改用直接「合格」字段，故随比例同步带出 合格
+                        const s50 = { 产量: s50r.产量 * scale, 合格: s50r.合格 * scale, 修补: s50r.修补 * scale, 不良: s50r.不良 * scale };
+                        const s75 = { 产量: s75r.产量 * scale, 合格: s75r.合格 * scale, 修补: s75r.修补 * scale, 不良: s75r.不良 * scale };
                         const totalYield = s50.产量 + s75.产量;
                         [
                             { spec: '50板', s: s50 },
@@ -5940,7 +5942,8 @@
                             const defect = s.不良;
                             const warehouse = safeGood(yieldQty, defect);
                             const yieldRatio = totalYield > 0 ? yieldQty / totalYield * 100 : 0;
-                            const qual = yieldQty > 0 ? (yieldQty - defect - repair) / yieldQty * 100 : 0;
+                            // v1.30.327：合格率用直接「合格」字段（s.合格=s50r.合格*scale，与产量同缩放，比值不变）
+                            const qual = yieldQty > 0 ? (s.合格 || 0) / yieldQty * 100 : 0;
                             const repairRate = yieldQty > 0 ? repair / yieldQty * 100 : 0;
                             const defectRate = yieldQty > 0 ? defect / yieldQty * 100 : 0;
                             const acc = foreignAcc[spec];
@@ -5982,8 +5985,8 @@
                         // v1.30.272：非历史月份柱状图产量（绝对值）同×tf 放大为全月预估；合格率折线（比率）不缩放
                         wh50.push(Math.max(0, a.产量 - a.不良) * scale);
                         wh75.push(Math.max(0, b.产量 - b.不良) * scale);
-                        q50.push(a.产量 > 0 ? (a.产量 - a.不良 - a.修补) / a.产量 * 100 : 0);
-                        q75.push(b.产量 > 0 ? (b.产量 - b.不良 - b.修补) / b.产量 * 100 : 0);
+                        q50.push(a.产量 > 0 ? (a.合格 || 0) / a.产量 * 100 : 0);
+                        q75.push(b.产量 > 0 ? (b.合格 || 0) / b.产量 * 100 : 0);
                     });
                     const foreignDataLabels = {
                         id: 'foreignDataLabels',
@@ -6400,14 +6403,16 @@
 
         // 记录集汇总：返回 {产量, 修补, 不良}；spec 传 '50板'/'75板' 时仅该规格，否则合并
         function manalysisSum(recs, spec) {
-            let y = 0, rep = 0, def = 0;
+            let y = 0, rep = 0, def = 0, qual = 0;
             recs.forEach(r => {
                 if (spec && r.spec !== spec) return;
                 y += parseFloat(r.yieldQty) || 0;
                 rep += parseFloat(r.repair) || 0;
                 def += parseFloat(r.defect) || 0;
+                qual += parseFloat(r.qualified) || 0;
             });
-            return { 产量: y, 修补: rep, 不良: def };
+            // v1.30.327：合格率一律用直接录入的「合格」字段，与外贸产量质量模块/月度数据口径统一（不再派生 产量−不良−修补）
+            return { 产量: y, 合格: qual, 修补: rep, 不良: def };
         }
 
         // v1.30.324：月度分析趋势图 tooltip 点击切换（点一次显示，再点同一点/点空白隐藏；鼠标划过不显示）
@@ -6469,8 +6474,8 @@
                         const s75 = manalysisSum(byDay[d], '75板');
                         wh50.push(safeGood(s50.产量, s50.不良));
                         wh75.push(safeGood(s75.产量, s75.不良));
-                        q50.push(s50.产量 > 0 ? (s50.产量 - s50.不良 - s50.修补) / s50.产量 * 100 : null);
-                        q75.push(s75.产量 > 0 ? (s75.产量 - s75.不良 - s75.修补) / s75.产量 * 100 : null);
+                        q50.push(s50.产量 > 0 ? (s50.合格 || 0) / s50.产量 * 100 : null);
+                        q75.push(s75.产量 > 0 ? (s75.合格 || 0) / s75.产量 * 100 : null);
                     });
                     cEl.innerHTML = '<div class="analysis-chart-wrap"><canvas id="manalysis-yield-canvas"></canvas></div>';
                     const mctx = document.getElementById('manalysis-yield-canvas');
@@ -6669,7 +6674,7 @@
                     total,
                     // 外贸占比 = 外贸可入库方量 / 可入库总方量（手输值），各阶段独立
                     ratio: (total !== null && total > 0) ? warehouse / total * 100 : null,
-                    qual: s.产量 > 0 ? (s.产量 - s.不良 - s.修补) / s.产量 * 100 : 0,
+                    qual: s.产量 > 0 ? (s.合格 || 0) / s.产量 * 100 : 0,
                     repairRate: s.产量 > 0 ? s.修补 / s.产量 * 100 : 0,
                     defectRate: s.产量 > 0 ? s.不良 / s.产量 * 100 : 0
                 });
@@ -6690,7 +6695,7 @@
             const tDRate = tSum.产量 > 0 ? tSum.不良 / tSum.产量 : 0;
             const tSort = (1 - tDRate) > 0 ? tWh / (1 - tDRate) : null;
             const tTotal = domestic.reduce((a, b) => a + (b === null ? 0 : b), 0);
-            h += `<tr class="analysis-total"><td>合计</td><td id="phase-total-sum">${fmtNum(tTotal)}</td><td>${tSort === null ? '—' : fmtNum(tSort)}</td><td>${fmtNum(tWh)}</td><td id="phase-ratio-sum">${tTotal > 0 ? fmtPct(tWh / tTotal * 100) : '—'}</td><td>${fmtPct(tSum.产量 > 0 ? (tSum.产量 - tSum.不良 - tSum.修补) / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.修补 / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.不良 / tSum.产量 * 100 : 0)}</td></tr>`;
+            h += `<tr class="analysis-total"><td>合计</td><td id="phase-total-sum">${fmtNum(tTotal)}</td><td>${tSort === null ? '—' : fmtNum(tSort)}</td><td>${fmtNum(tWh)}</td><td id="phase-ratio-sum">${tTotal > 0 ? fmtPct(tWh / tTotal * 100) : '—'}</td><td>${fmtPct(tSum.产量 > 0 ? (tSum.合格 || 0) / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.修补 / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.不良 / tSum.产量 * 100 : 0)}</td></tr>`;
             h += '</tbody></table></div>';
             tEl.innerHTML = h;
         }
@@ -8126,7 +8131,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.326';
+        const APP_VERSION = 'v1.30.327';
 
         function forceRefresh() {
             if ('caches' in window) {
