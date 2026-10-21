@@ -11,6 +11,8 @@
     <link rel="manifest" href="manifest.json" data-page-node-id="4StfTSz9y9b9ok76DbrxIB">
     <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" data-page-node-id="31Ac3QN8wNX557EAz9eNRE">
     <link rel="apple-touch-icon" href="apple-touch-icon.png" data-page-node-id="JI4H2a1tDiLkAYdZFhAOiR">
+    <!-- v1.30.328：预热 Supabase 连接，降低手机蜂窝网冷启动拉取的 TLS 握手延迟 -->
+    <link rel="preconnect" href="https://gcwehwqcccmjxrqtolev.supabase.co" crossorigin>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         body {
@@ -2377,7 +2379,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.327</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.328</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -8131,7 +8133,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.327';
+        const APP_VERSION = 'v1.30.328';
 
         function forceRefresh() {
             if ('caches' in window) {
@@ -9284,13 +9286,15 @@
             const board = getSyncBoard();
             if (!board || !SYNC.enabled || !SYNC.url || !SYNC.anon) return;
             if (board === LEGACY_SYNC_BOARD) return;
+            // v1.30.328：已确认搬迁完成的账号，后续登录直接跳过这两笔拉取（省掉手机冷启动的 2 次往返）
+            try { if (localStorage.getItem('pa_legacy_migrated_v1') === '1') return; } catch (e) {}
             try {
                 const legacy = await sbPullBoard(LEGACY_SYNC_BOARD);
                 const legacyHasData = payloadHasData(legacy && legacy.data);
                 const mine = await sbPullBoard(board);
                 const mineHasData = payloadHasData(mine && mine.data);
                 if (!mineHasData) {
-                    if (!legacyHasData) return;   // 两边都空：没有要保护的东西，不动老 board
+                    if (!legacyHasData) { try { localStorage.setItem('pa_legacy_migrated_v1', '1'); } catch (e) {} return; }   // 老 board 已空且不会再产生数据：标记免迁移，后续登录跳过这两次拉取
                     // v1.30.289：只有「已证明是本人」的登录才允许从公开老 board 搬数据，
                     // 否则任何非本人会话都能把公开数据搬进他自己的标识下（这是上一版的漏洞）。
                     if (!_ownerOk) return;
@@ -9303,6 +9307,7 @@
                 if (legacyHasData) {
                     // 老数据已安全落到私有 board，把公开行清掉（只留一个搬迁标记）
                     await sbPushBoard(LEGACY_SYNC_BOARD, { __migrated__: true, at: new Date().toISOString() });
+                    try { localStorage.setItem('pa_legacy_migrated_v1', '1'); } catch (e) {}
                 }
             } catch (e) { /* 网络/密钥异常静默跳过：本次不搬，下次登录再试，绝不因此丢数据 */ }
         }
@@ -9413,8 +9418,12 @@
             setSync('已开启', 'busy');
             pullState();
             window.addEventListener('focus', () => syncNow(false));
+            // v1.30.328：手机 PWA/浏览器从后台切回时 focus 不可靠、iOS 还会挂起定时器；
+            // 补 pageshow（移动端恢复/前进后退缓存最稳的触发）+ visibilitychange，确保回到 app 立即拉取。
+            window.addEventListener('pageshow', () => syncNow(false));
             document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncNow(false); });
-            setInterval(() => { if (document.visibilityState === 'visible') syncNow(false); }, 30000);
+            // v1.30.328：轮询由 30s 收紧到 20s，跨设备刚改完体感更跟手（单次小 GET，流量可忽略）
+            setInterval(() => { if (document.visibilityState === 'visible') syncNow(false); }, 20000);
             window.addEventListener('beforeunload', () => { if (_dirty) pushState(); });
             document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && _dirty) pushState(); });
         }
