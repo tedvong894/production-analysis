@@ -2360,26 +2360,26 @@
 
         <!-- 指标1：每日明细趋势图（外贸每日明细组合图，忽略黄色修正数据条） -->
         <div class="analysis-card">
-            <div class="analysis-card-title"><span class="idx">1</span>每日明细趋势图</div>
+            <div class="analysis-card-title"><span class="idx">1</span>外贸产量质量-每日明细趋势图</div>
             <div id="manalysis-yield-chart"></div>
         </div>
 
-        <!-- 指标2：阶段比较（上旬=1-10日 / 中旬=11-20日 / 下旬=21-月底） -->
+        <!-- 指标2：团队表现 · 扣款占比趋势（v1.30.285：数据=外贸产量质量·工段质量扣款每日明细；线=各工段每日占比，柱=当日扣款合计） -->
         <div class="analysis-card">
-            <div class="analysis-card-title"><span class="idx">2</span>阶段比较</div>
-            <div id="manalysis-phase-table"></div>
+            <div class="analysis-card-title"><span class="idx">2</span>团队表现 · 累计扣款占比趋势</div>
+            <div id="manalysis-team-chart"></div>
         </div>
 
-        <!-- 指标3：团队表现 · 扣款占比趋势（v1.30.285：数据=外贸产量质量·工段质量扣款每日明细；线=各工段每日占比，柱=当日扣款合计） -->
+        <!-- 指标3：阶段比较（上旬=1-10日 / 中旬=11-20日 / 下旬=21-月底） -->
         <div class="analysis-card">
-            <div class="analysis-card-title"><span class="idx">3</span>团队表现 · 累计扣款占比趋势</div>
-            <div id="manalysis-team-chart"></div>
+            <div class="analysis-card-title"><span class="idx">3</span>阶段比较</div>
+            <div id="manalysis-phase-table"></div>
         </div>
     </div>
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.328</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.329</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -6457,7 +6457,7 @@
                 ? '「' + monthName + '」暂无每日明细数据，请先到「外贸产量质量」模块录入。'
                 : '暂无月份数据。';
 
-            // ===== 指标1：每日明细趋势图（外贸每日明细组合图：柱=可入库产量 50/75板，线=合格率） =====
+            // ===== 指标1：外贸产量质量-每日明细趋势图（外贸每日明细组合图：柱=可入库产量 50/75板，线=合格率） =====
             if (cEl) {
                 disposeAnalysisChart('manalysisYield');
                 if (recs.length === 0) {
@@ -8133,7 +8133,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.328';
+        const APP_VERSION = 'v1.30.329';
 
         function forceRefresh() {
             if ('caches' in window) {
