@@ -9067,7 +9067,7 @@
         }
         let SYNC = loadSyncCfg();
         delete SYNC.board;   // v1.30.288：不再使用固定 board（改为按账号派生）
-        let _pushTimer = null, _pulled = false, _dirty = false, _suppressDirty = false, _syncing = false, _lastSyncAt = null, _lastErr = '', _lastCloudJson = null, _lastCloudUpdatedAt = null, _safetyValveTripped = false;
+        let _pushTimer = null, _pulled = false, _dirty = false, _suppressDirty = false, _syncing = false, _lastSyncAt = null, _lastErr = '', _lastCloudJson = null, _lastCloudUpdatedAt = null, _lastForcedPullAt = 0, _safetyValveTripped = false;
 
         function saveSyncCfg() { try { localStorage.setItem(SYNC_CFG_KEY, JSON.stringify(SYNC)); } catch (e) {} }
 
@@ -9379,6 +9379,20 @@
             return !!(a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable));
         }
 
+        // v1.30.331：本机数据是否「缺东西」——被配额写入失败/iOS 驱逐清空后，
+        //   若只靠 updated_at 探测会永远跳过拉取 → 页面一直全 0 +「无有效月份」。
+        //   判据与驾驶舱一致：月度数据里没有任何有效月份 → 视为缺数据。
+        function localDataMissing() {
+            try {
+                const raw = localStorage.getItem(MONTHLY_KEY);
+                const m = raw ? JSON.parse(raw) : null;
+                const months = (m && Array.isArray(m.months)) ? m.months : [];
+                const valid = months.filter(x => x && typeof x.name === 'string' && x.name).length;
+                if (valid === 0) return true;
+            } catch (e) { return true; }
+            return !localHasRealData();
+        }
+
         // 拉：云端 → 本机（云端为权威）
         async function pullState() {
             if (!SYNC.enabled) { setSync('本地'); return; }
@@ -9406,9 +9420,17 @@
                         snapshotAutoBackup();
                         _syncing = false; return;
                     } else if (meta === _lastCloudUpdatedAt) {
-                        // 云端未变化：跳过整包拉取与重渲染
-                        _lastSyncAt = new Date(); setSync('已同步', 'on');
-                        _syncing = false; return;
+                        // 云端未变化：跳过整包拉取与重渲染。
+                        // ⚠️ 但本机数据若已被清空（配额写失败 / iOS 驱逐过 origin），必须强制拉一次，
+                        //    否则探测会一直说「云端没变」→ 页面永远停在全 0 +「无有效月份」。
+                        const _now = Date.now();
+                        if (localDataMissing() && (_now - _lastForcedPullAt) > 60000) {
+                            _lastForcedPullAt = _now;   // 至少间隔 60s，避免反复搬大包
+                            // 透传 → 继续下面的整包拉取
+                        } else {
+                            _lastSyncAt = new Date(); setSync('已同步', 'on');
+                            _syncing = false; return;
+                        }
                     }
                     // meta 与本地记录不同 → 继续下面的整包拉取
                 }
