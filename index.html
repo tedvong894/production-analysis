@@ -2159,6 +2159,11 @@
                     </div>
                 </div>
 
+                <div style="margin-bottom:14px;" data-page-node-id="stInfoWrap">
+                    <div style="font-weight:600; margin-bottom:4px;" data-page-node-id="stInfoTitle">本机存储占用</div>
+                    <div id="storage-info" style="font-size:11px;color:#888;" data-page-node-id="stInfoBox"></div>
+                </div>
+
                 <div style="margin-bottom:10px;" data-page-node-id="wuizDV5ev4FVMcD1Xla7Uz">
                     <div style="font-weight:600; margin-bottom:8px;" data-page-node-id="cN2iNucsTATZPJRBFskjDE">导入备份</div>
                     <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;" data-page-node-id="ZHZXxT1DYP6mqQbN9VCjvh">
@@ -2173,7 +2178,7 @@
 
                 <div style="margin-top:16px;border-top:1px solid #eee;padding-top:14px;" data-page-node-id="abLstWrap">
                     <div style="font-weight:600; margin-bottom:4px;" data-page-node-id="abLstTitle">每月自动备份快照</div>
-                    <div style="font-size:11px;color:#999;margin-bottom:8px;" data-page-node-id="abLstHint">应用每月自动留一份数据快照（本地 + 云端同步），万一数据被同步弄坏可一键回滚。</div>
+                    <div style="font-size:11px;color:#999;margin-bottom:8px;" data-page-node-id="abLstHint">应用每月自动留一份数据快照（最多 3 个月，本地 + 云端同步），万一数据被同步弄坏可一键回滚。</div>
                     <div id="autobackup-list" style="font-size:12px;color:#555;max-height:180px;overflow:auto;" data-page-node-id="abLstBox"></div>
                 </div>
             </div>
@@ -2379,7 +2384,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.330</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.331</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -8133,7 +8138,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.330';
+        const APP_VERSION = 'v1.30.331';
 
         function forceRefresh() {
             if ('caches' in window) {
@@ -8670,10 +8675,49 @@
         // v1.30.314：每月自动备份快照键（随云端加密同步，所有设备共享、可一键回滚）
         const AUTO_BACKUP_KEY = 'pa_auto_backups';
         const BACKUP_KEYS = [STORAGE_KEY, PARAMS_KEY, MONTHLY_KEY, YIELD_KEY, TF_KEY, ORDER_KEY, AUTO_BACKUP_KEY];
+        // v1.30.331：真正的业务数据键（不含自动备份自身）。
+        //   根因：自动备份快照以前用 BACKUP_KEYS 打包 = 「每份新快照把之前所有快照再嵌进去」，
+        //   体积按 2^n 指数膨胀 → 撑爆 localStorage 配额与云端载荷（实测云端密文已涨到 5.5MB），
+        //   写入配额异常又被静默吞掉 → 本机数据变空 → 页面全 0 +「本机月份数据异常（无有效月份）」。
+        const DATA_KEYS = [STORAGE_KEY, PARAMS_KEY, MONTHLY_KEY, YIELD_KEY, TF_KEY, ORDER_KEY];
+        const AUTO_BACKUP_MAX_MONTHS = 3;          // 自动备份最多留 3 个月（原 12）
+        const AUTO_BACKUP_MAX_CHARS = 800000;      // 自动备份总体积上限（字符数，≈1.6MB 配额）
+        const LS_QUOTA_CHARS = 2.5 * 1024 * 1024;  // localStorage 约 5MB 配额，按 UTF-16 2 字节/字符折算
 
-        function buildBackup() {
+        // ---- 安全写入：以前配额异常被 catch 静默吞掉，用户看不到任何提示 ----
+        let _lsQuotaWarned = false, _lsLastErr = '';
+        function lsSet(key, val) {
+            try {
+                localStorage.setItem(key, val);
+                return true;
+            } catch (e) {
+                const quota = !!(e && (e.name === 'QuotaExceededError' || e.code === 22 ||
+                    e.name === 'NS_ERROR_DOM_QUOTA_REACHED'));
+                _lsLastErr = quota ? '本机存储空间已满' : ((e && e.message) || String(e));
+                try { console.warn('[pa] localStorage 写入失败：', key, e); } catch (x) {}
+                if (quota && !_lsQuotaWarned) {
+                    _lsQuotaWarned = true;
+                    try { showToast('⚠️ 本机存储空间已满，数据未能保存。请到「数据 → 数据备份」清理历史快照。'); } catch (x) {}
+                }
+                return false;
+            }
+        }
+        // 当前 localStorage 已占用的字符数（UTF-16，1 字符≈2 字节配额）；excludeKey 可排除「即将被替换」的旧值
+        function lsUsedChars(excludeKey) {
+            let n = 0;
+            try {
+                for (let i = 0; i < localStorage.length; i++) {
+                    const k = localStorage.key(i);
+                    if (!k || k === excludeKey) continue;
+                    n += (localStorage.getItem(k) || '').length;
+                }
+            } catch (e) {}
+            return n;
+        }
+        // 只打包业务数据键（不含自动备份自身）→ 快照不再指数膨胀
+        function buildDataBundle() {
             const data = {};
-            BACKUP_KEYS.forEach(k => {
+            DATA_KEYS.forEach(k => {
                 const v = localStorage.getItem(k);
                 if (v !== null) {
                     try { data[k] = JSON.parse(v); } catch (e) { /* 跳过损坏项 */ }
@@ -8684,11 +8728,106 @@
                 data: data
             };
         }
+        // 剥掉历史快照里嵌套的自动备份（一次性自愈旧的指数膨胀数据）
+        function sanitizeAutoBackupStore(store) {
+            const out = {};
+            if (!store || typeof store !== 'object') return out;
+            Object.keys(store).sort().forEach(ym => {
+                const b = store[ym];
+                if (!b || typeof b !== 'object') return;
+                if (b.data && typeof b.data === 'object' && b.data[AUTO_BACKUP_KEY] !== undefined) {
+                    try {
+                        const nb = JSON.parse(JSON.stringify(b));
+                        delete nb.data[AUTO_BACKUP_KEY];
+                        out[ym] = nb;
+                        return;
+                    } catch (e) {}
+                }
+                out[ym] = b;
+            });
+            return out;
+        }
+        // 自动备份限额：份数（保留最新）+ 体积（按剩余配额动态算，超限先砍最旧）
+        function capAutoBackupStore(store) {
+            let out = sanitizeAutoBackupStore(store);
+            let keys = Object.keys(out).sort();
+            while (keys.length > AUTO_BACKUP_MAX_MONTHS) { delete out[keys.shift()]; keys = Object.keys(out).sort(); }
+            // 可用预算 = 剩余配额的 50%（另一半留给业务数据），且不超过硬上限
+            const free = Math.max(0, LS_QUOTA_CHARS - lsUsedChars(AUTO_BACKUP_KEY));
+            const budget = Math.min(AUTO_BACKUP_MAX_CHARS, Math.floor(free * 0.5));
+            let txt = JSON.stringify(out);
+            while (keys.length > 1 && txt.length > budget) {
+                delete out[keys.shift()]; keys = Object.keys(out).sort();
+                txt = JSON.stringify(out);
+            }
+            if (txt.length > budget) return {};   // 单份就超预算 → 放弃自动备份（数据优先）
+            return out;
+        }
+        // 载荷瘦身：自动备份去掉嵌套、超限的部分
+        function pruneAutoBackupInPayload(payload) {
+            if (!payload || typeof payload !== 'object') return payload;
+            if (payload[AUTO_BACKUP_KEY] === undefined) return payload;
+            const out = Object.assign({}, payload);
+            const flat = capAutoBackupStore(payload[AUTO_BACKUP_KEY]);
+            if (Object.keys(flat).length) out[AUTO_BACKUP_KEY] = flat; else delete out[AUTO_BACKUP_KEY];
+            return out;
+        }
+        // 启动自愈：把膨胀的自动备份自动瘦身，释放被占满的 localStorage 配额
+        function healOversizedAutoBackup() {
+            try {
+                const v = localStorage.getItem(AUTO_BACKUP_KEY);
+                if (!v) return false;
+                let parsed = null;
+                try { parsed = JSON.parse(v); } catch (e) { parsed = null; }
+                let nested = false;
+                if (parsed && typeof parsed === 'object') {
+                    Object.keys(parsed).forEach(ym => {
+                        const b = parsed[ym];
+                        if (b && b.data && b.data[AUTO_BACKUP_KEY] !== undefined) nested = true;
+                    });
+                }
+                if (!nested && v.length <= AUTO_BACKUP_MAX_CHARS) return false;
+                const flat = capAutoBackupStore(parsed);
+                const txt = JSON.stringify(flat);
+                if (txt.length <= AUTO_BACKUP_MAX_CHARS) lsSet(AUTO_BACKUP_KEY, txt);
+                else { try { localStorage.removeItem(AUTO_BACKUP_KEY); } catch (e) {} }
+                return true;
+            } catch (e) { return false; }
+        }
+        // 备份面板里的存储占用诊断（一眼看出「是不是又撑爆了」）
+        function renderStorageInfo() {
+            const box = document.getElementById('storage-info');
+            if (!box) return;
+            const rows = DATA_KEYS.concat([AUTO_BACKUP_KEY]).map(k => {
+                let len = 0;
+                try { len = (localStorage.getItem(k) || '').length; } catch (e) {}
+                return { k, len };
+            });
+            const used = lsUsedChars();
+            const kb = n => (n * 2 / 1024).toFixed(0) + ' KB';
+            box.innerHTML = '<div style="font-size:11px;color:#999;margin-bottom:4px;">本机占用 ' + kb(used) + ' / 约 5 MB（浏览器配额）</div>' +
+                rows.map(r => '<div style="font-size:11px;color:#888;display:flex;justify-content:space-between;"><span>' +
+                    (r.k === AUTO_BACKUP_KEY ? '自动备份快照' : r.k.replace('production_analysis_', '')) +
+                    '</span><span>' + kb(r.len) + '</span></div>').join('');
+        }
+
+        function buildBackup() {
+            // v1.30.331：导出不再自我嵌套——业务数据 + 一份「扁平」的自动备份历史
+            const bundle = buildDataBundle();
+            let ab = null;
+            try { const v = localStorage.getItem(AUTO_BACKUP_KEY); if (v) ab = JSON.parse(v); } catch (e) {}
+            if (ab) {
+                const flat = capAutoBackupStore(ab);
+                if (Object.keys(flat).length) bundle.data[AUTO_BACKUP_KEY] = flat;
+            }
+            return bundle;
+        }
 
         function openBackupPanel() {
             const modal = document.getElementById('backup-modal');
             if (modal) modal.style.display = 'flex';
             renderAutoBackupList();
+            renderStorageInfo();   // v1.30.331：展示各键占用，便于一眼看出是否又撑爆
         }
 
         // v1.30.251：顶栏「⚙️ 数据」下拉菜单（备份 / 联网 / 刷新 三合一）
@@ -8765,7 +8904,7 @@
             let map = (obj.data && typeof obj.data === 'object') ? obj.data : obj;
             const keys = Object.keys(map).filter(k => BACKUP_KEYS.indexOf(k) >= 0);
             if (keys.length === 0) throw new Error('备份中未找到任何本应用数据');
-            keys.forEach(k => localStorage.setItem(k, JSON.stringify(map[k])));
+            keys.forEach(k => lsSet(k, JSON.stringify(map[k])));   // v1.30.331：走安全写入（配额不足会明确提示，不再静默失败）
             reloadAllData();
             return keys.length;
         }
@@ -8794,20 +8933,24 @@
             const x = d || new Date();
             return x.getFullYear() + '-' + ('0' + (x.getMonth() + 1)).slice(-2);
         }
-        // 生成「当前月」快照（同一月只留最新一份；最多保留最近 12 个月，防无限膨胀）
+        // 生成「当前月」快照（同一月只留最新一份；最多 3 个月 + 体积限额，防无限膨胀）
         function snapshotAutoBackup() {
             try {
                 let store = {};
                 try { const v = localStorage.getItem(AUTO_BACKUP_KEY); if (v) store = JSON.parse(v) || {}; } catch (e) {}
                 if (!store || typeof store !== 'object') store = {};
+                store = sanitizeAutoBackupStore(store);     // 剥掉历史嵌套（自愈旧的指数膨胀数据）
                 const ym = autoBackupMonthKey();
-                const bundle = buildBackup();
+                const bundle = buildDataBundle();            // v1.30.331：只含业务数据 → 不再指数膨胀
                 bundle._meta.autoBackup = true;
                 store[ym] = bundle;
-                // 仅留最近 12 个月
-                const keys = Object.keys(store).sort();
-                while (keys.length > 12) { delete store[keys.shift()]; }
-                localStorage.setItem(AUTO_BACKUP_KEY, JSON.stringify(store));
+                store = capAutoBackupStore(store);
+                const txt = JSON.stringify(store);
+                if (!Object.keys(store).length || txt.length > AUTO_BACKUP_MAX_CHARS) {
+                    try { localStorage.removeItem(AUTO_BACKUP_KEY); } catch (e) {}
+                    return;
+                }
+                lsSet(AUTO_BACKUP_KEY, txt);
             } catch (e) {}
         }
         // 仅当本月尚无快照才生成（用于离线/本地模式的启动兜底；联网设备由首拉成功后强制刷新当月快照）
@@ -8856,7 +8999,7 @@
                 const map = (b.data && typeof b.data === 'object') ? b.data : b;
                 const keys = Object.keys(map).filter(k => BACKUP_KEYS.indexOf(k) >= 0 && k !== AUTO_BACKUP_KEY);
                 if (keys.length === 0) { showBackupMsg('warn', '❌ 该快照不含可恢复数据'); return; }
-                keys.forEach(k => localStorage.setItem(k, JSON.stringify(map[k])));
+                keys.forEach(k => lsSet(k, JSON.stringify(map[k])));   // v1.30.331：走安全写入（配额不足会明确提示，不再静默失败）
                 reloadAllData();
                 showBackupMsg('ok', '✅ 已回滚到 ' + ym + ' 快照，共恢复 ' + keys.length + ' 项。正在同步云端…');
                 pushState();
@@ -8943,17 +9086,34 @@
 
         function collectLocalPayload() {
             const out = {};
-            BACKUP_KEYS.forEach(k => {
+            DATA_KEYS.forEach(k => {
                 const v = localStorage.getItem(k);
                 if (v !== null) { try { out[k] = JSON.parse(v); } catch (e) {} }
             });
+            // v1.30.331：自动备份瘦身后再上云（否则云端载荷会被旧的指数膨胀数据撑到几 MB，
+            //   手机/iPad 每轮同步都要搬走这些无用数据）
+            try {
+                const v = localStorage.getItem(AUTO_BACKUP_KEY);
+                if (v) {
+                    const flat = capAutoBackupStore(JSON.parse(v));
+                    if (Object.keys(flat).length) out[AUTO_BACKUP_KEY] = flat;
+                }
+            } catch (e) {}
             return out;
         }
         function applyPayloadToLocal(payload) {
-            BACKUP_KEYS.forEach(k => {
-                if (payload && payload[k] !== undefined) {
-                    try { localStorage.setItem(k, JSON.stringify(payload[k])); } catch (e) {}
-                }
+            if (!payload || typeof payload !== 'object') return;
+            // v1.30.331：先写「瘦身后的自动备份」——它替换掉旧的膨胀版本、立刻释放被占满的配额，
+            //   后面 6 个业务数据键才写得进去。
+            //   （旧逻辑先写数据键、配额异常被静默吞掉 → 本机数据空 → 页面全 0 +「无有效月份」警告）
+            if (payload[AUTO_BACKUP_KEY] !== undefined) {
+                const flat = capAutoBackupStore(payload[AUTO_BACKUP_KEY]);
+                const txt = JSON.stringify(flat);
+                if (Object.keys(flat).length && txt.length <= AUTO_BACKUP_MAX_CHARS) lsSet(AUTO_BACKUP_KEY, txt);
+                else { try { localStorage.removeItem(AUTO_BACKUP_KEY); } catch (e) {} }
+            }
+            DATA_KEYS.forEach(k => {
+                if (payload[k] !== undefined) lsSet(k, JSON.stringify(payload[k]));
             });
         }
         function payloadHasData(payload) {
@@ -9283,6 +9443,11 @@
                         pushMerged = JSON.stringify(merged) !== JSON.stringify(cloud);
                         adopted = merged;
                     }
+                    // v1.30.331：自动备份瘦身（去嵌套/超限）——本机与云端同时变干净，
+                    //   云端载荷从 MB 级回落到正常体积（顺带让手机/iPad 同步重新变快）
+                    const prunedAdopted = pruneAutoBackupInPayload(adopted);
+                    const reshaped = JSON.stringify(prunedAdopted) !== JSON.stringify(adopted);
+                    adopted = prunedAdopted;
                     _suppressDirty = true;
                     try { applyPayloadToLocal(adopted); rebuildFromStorage(); } finally { _suppressDirty = false; }
                     saveBaselineFromPayload(adopted);   // v1.30.312：记录首拉合并后的云端基线，供后续三路合并识别「其他设备已删除」
@@ -9292,7 +9457,7 @@
                     _lastCloudUpdatedAt = cloudUpdatedAt;   // v1.30.330：记录云端时间戳，供下次轻量探测比对
                     snapshotAutoBackup();   // v1.30.314：首拉/合并成功后留当月快照（含云端数据）
                     setSync('已同步', 'on');
-                    if (pushMerged) pushState();
+                    if (pushMerged || reshaped) { _dirty = true; pushState(); }   // v1.30.331：把瘦身后的载荷回推云端（自愈）
                 } else {
                     // 云端暂无该标识数据：标记已拉取；本机有真实数据则推上去做种
                     _pulled = true; _lastSyncAt = new Date();
@@ -9381,8 +9546,22 @@
             BACKUP_KEYS.forEach(k => { WATCH[k] = 1; });
             const _orig = localStorage.setItem.bind(localStorage);
             localStorage.setItem = function (k, v) {
-                _orig(k, v);
-                if (WATCH[k] && !_suppressDirty && SYNC && SYNC.enabled) { _dirty = true; pushState(); }
+                let ok = true;
+                try {
+                    _orig(k, v);
+                } catch (e) {
+                    // v1.30.331：配额异常不再往上抛（否则会把业务代码炸掉、让整条「保存」链路失败），
+                    //   改为明确提示 —— 以前这里静默失败，用户只看到「数据没保存」却不知原因。
+                    ok = false;
+                    const quota = !!(e && (e.name === 'QuotaExceededError' || e.code === 22));
+                    _lsLastErr = quota ? '本机存储空间已满' : ((e && e.message) || String(e));
+                    try { console.warn('[pa] localStorage 写入失败：', k, e); } catch (x) {}
+                    if (quota && !_lsQuotaWarned) {
+                        _lsQuotaWarned = true;
+                        try { showToast('⚠️ 本机存储空间已满，最新修改未能保存。请到「数据 → 数据备份」清理历史快照。'); } catch (x) {}
+                    }
+                }
+                if (ok && WATCH[k] && !_suppressDirty && SYNC && SYNC.enabled) { _dirty = true; pushState(); }
             };
         }
 
@@ -9646,6 +9825,9 @@
         // ============ 启动 ============
         // v1.30.287：启动序列收敛到 bootApp()，由登录门禁决定何时执行（未登录不渲染业务数据）
         function bootApp() {
+            // v1.30.331：启动自愈——先瘦身膨胀的自动备份（旧的指数嵌套数据）、释放被占满的
+            //   localStorage 配额，再初始化数据；否则本机可能直接读出一份空数据（全 0 + 无有效月份）
+            try { healOversizedAutoBackup(); } catch (e) {}
             initData();
             initParams();
             bindParamAutoSave();
