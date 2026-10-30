@@ -2379,7 +2379,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.329</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.330</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -8133,7 +8133,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.329';
+        const APP_VERSION = 'v1.30.330';
 
         function forceRefresh() {
             if ('caches' in window) {
@@ -8924,7 +8924,7 @@
         }
         let SYNC = loadSyncCfg();
         delete SYNC.board;   // v1.30.288：不再使用固定 board（改为按账号派生）
-        let _pushTimer = null, _pulled = false, _dirty = false, _suppressDirty = false, _syncing = false, _lastSyncAt = null, _lastErr = '', _lastCloudJson = null, _safetyValveTripped = false;
+        let _pushTimer = null, _pulled = false, _dirty = false, _suppressDirty = false, _syncing = false, _lastSyncAt = null, _lastErr = '', _lastCloudJson = null, _lastCloudUpdatedAt = null, _safetyValveTripped = false;
 
         function saveSyncCfg() { try { localStorage.setItem(SYNC_CFG_KEY, JSON.stringify(SYNC)); } catch (e) {} }
 
@@ -9082,6 +9082,19 @@
         }
         async function sbPull() { return sbPullBoard(getSyncBoard()); }
         async function sbPush(payload) { return sbPushBoard(getSyncBoard(), payload); }
+        // v1.30.330：轻量探测——只拉 updated_at（几十字节），用于判断云端是否真的变了。
+        // 未变化时即可跳过「整包下载 + AES 解密」这 43KB 的重活，移动端/弱网体验关键优化。
+        async function sbPullMeta(board) {
+            if (!SYNC.url || !SYNC.anon || !board) return null;
+            const base = SYNC.url.replace(/\/+$/, '');
+            const table = SYNC.table || 'workbench_state';
+            const url = base + '/rest/v1/' + table + '?id=eq.' + encodeURIComponent(board) + '&select=updated_at';
+            const r = await fetch(url, { headers: { apikey: SYNC.anon, Authorization: 'Bearer ' + SYNC.anon, Accept: 'application/json' } });
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            const arr = await r.json();
+            const row = (Array.isArray(arr) && arr.length) ? arr[0] : null;
+            return row ? row.updated_at : null;
+        }
 
         // 推：本机 → 云端（首次成功拉取前绝不执行，避免用本地旧数据覆盖云端）
         function pushState() {
@@ -9214,10 +9227,35 @@
             _syncing = true;
             setSync('同步中…', 'busy');
             try {
+                // 本机有未上云改动（且已拉过一次）：只推本地，绝不被云端覆盖。
+                // 放在探测之前，连「轻量探测」这一次网络请求都省掉。
+                if (_dirty && _pulled) { _syncing = false; pushState(); setSync('已同步', 'on'); return; }
+
+                // v1.30.330：轻量探测——已拉取过且记录过云端 updated_at 时，先只拉 updated_at（几十字节）。
+                // 与本地记录一致就跳过「整包下载 + AES 解密」这 43KB 重活，移动端/弱网不再每 10s 搬密文。
+                if (_pulled && _lastCloudUpdatedAt) {
+                    let meta;
+                    try { meta = await sbPullMeta(getSyncBoard()); }
+                    catch (e) { meta = undefined; }   // 探测异常 → 降级走整包拉取兜底，不因此中断同步
+                    if (meta === undefined) {
+                        // 探测失败：透传，下面做整包拉取
+                    } else if (meta === null) {
+                        // 云端无该行：等同「暂无数据」分支处理
+                        _pulled = true; _lastSyncAt = new Date(); setSync('已同步', 'on');
+                        if (localHasRealData()) pushState();
+                        snapshotAutoBackup();
+                        _syncing = false; return;
+                    } else if (meta === _lastCloudUpdatedAt) {
+                        // 云端未变化：跳过整包拉取与重渲染
+                        _lastSyncAt = new Date(); setSync('已同步', 'on');
+                        _syncing = false; return;
+                    }
+                    // meta 与本地记录不同 → 继续下面的整包拉取
+                }
+
                 const row = await sbPull();
                 const cloud = row && row.data;
-                // 本地有未上云改动（且已拉过一次）：只推本地，绝不被云端覆盖
-                if (_dirty && _pulled) { _syncing = false; pushState(); setSync('已同步', 'on'); return; }
+                const cloudUpdatedAt = row && row.updated_at;
                 if (payloadHasData(cloud)) {
                     const cloudJson = JSON.stringify(cloud);
                     // v1.30.314：防丢失安全阀——云端数据量比本机少一大截（疑似被误清/同步损坏），
@@ -9251,12 +9289,14 @@
                     _dirty = false; _lastErr = '';
                     _pulled = true; _lastSyncAt = new Date();
                     _lastCloudJson = JSON.stringify(adopted);
+                    _lastCloudUpdatedAt = cloudUpdatedAt;   // v1.30.330：记录云端时间戳，供下次轻量探测比对
                     snapshotAutoBackup();   // v1.30.314：首拉/合并成功后留当月快照（含云端数据）
                     setSync('已同步', 'on');
                     if (pushMerged) pushState();
                 } else {
                     // 云端暂无该标识数据：标记已拉取；本机有真实数据则推上去做种
                     _pulled = true; _lastSyncAt = new Date();
+                    _lastCloudUpdatedAt = null;   // v1.30.330：无云端数据，下次仍走整包拉取
                     setSync('已同步', 'on');
                     if (localHasRealData()) pushState();
                     snapshotAutoBackup();   // v1.30.314：本机有真实数据且云端空白，也先留一份快照
@@ -9422,8 +9462,9 @@
             // 补 pageshow（移动端恢复/前进后退缓存最稳的触发）+ visibilitychange，确保回到 app 立即拉取。
             window.addEventListener('pageshow', () => syncNow(false));
             document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncNow(false); });
-            // v1.30.328：轮询由 30s 收紧到 20s，跨设备刚改完体感更跟手（单次小 GET，流量可忽略）
-            setInterval(() => { if (document.visibilityState === 'visible') syncNow(false); }, 20000);
+            // v1.30.330：轮询由 20s 收紧到 10s。因已改为「先轻量探测 updated_at、未变即跳过整包拉取」，
+            // 空闲轮询流量仅几十字节，收紧到 10s 也不会增加负担，跨设备刚改完体感更跟手。
+            setInterval(() => { if (document.visibilityState === 'visible') syncNow(false); }, 10000);
             window.addEventListener('beforeunload', () => { if (_dirty) pushState(); });
             document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && _dirty) pushState(); });
         }
