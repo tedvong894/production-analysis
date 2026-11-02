@@ -2378,7 +2378,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.332</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.333</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -8149,7 +8149,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.332';
+        const APP_VERSION = 'v1.30.333';
 
         function forceRefresh() {
             if ('caches' in window) {
@@ -8938,8 +8938,9 @@
             reader.readAsText(file);
         }
 
-        // ============ v1.30.314：每月自动备份快照 ============
-        // 应用自己按月留快照（本地 + 随云端加密同步），即使哪天同步又把数据搞坏，也能一键回滚到上个月。
+        // ============ 每月自动备份快照（仅本机） ============
+        // v1.30.333 起：快照只存本机 localStorage，不再随云端同步（它只用于本机一键回滚）。
+        // 旧版曾把它塞进同步载荷，且快照自我嵌套膨胀到 5.5MB，多设备反复整包下载刷爆了 Supabase 出站额度。
         function autoBackupMonthKey(d) {
             const x = d || new Date();
             return x.getFullYear() + '-' + ('0' + (x.getMonth() + 1)).slice(-2);
@@ -9101,15 +9102,9 @@
                 const v = localStorage.getItem(k);
                 if (v !== null) { try { out[k] = JSON.parse(v); } catch (e) {} }
             });
-            // v1.30.331：自动备份瘦身后再上云（否则云端载荷会被旧的指数膨胀数据撑到几 MB，
-            //   手机/iPad 每轮同步都要搬走这些无用数据）
-            try {
-                const v = localStorage.getItem(AUTO_BACKUP_KEY);
-                if (v) {
-                    const flat = capAutoBackupStore(JSON.parse(v));
-                    if (Object.keys(flat).length) out[AUTO_BACKUP_KEY] = flat;
-                }
-            } catch (e) {}
+            // v1.30.333：自动备份快照改为「仅本机」——它只用于本机一键回滚，无需跨设备同步；
+            //   且正是它（旧版自我嵌套膨胀）把云端载荷撑到 5.5MB，多设备反复整包下载刷爆了 Supabase 出站额度。
+            //   剔除后云端同步载荷仅剩 6 个业务键，流量大幅下降、几乎不可能再刷爆额度。
             return out;
         }
         function applyPayloadToLocal(payload) {
@@ -9129,7 +9124,7 @@
         }
         function payloadHasData(payload) {
             if (!payload || typeof payload !== 'object') return false;
-            return BACKUP_KEYS.some(k => payload[k] !== undefined);
+            return DATA_KEYS.some(k => payload[k] !== undefined);
         }
         // 本机是否有「真实数据」（用于判断云端空白时要不要把本机推上去做种，避免把空壳默认月写进云端）
         function localHasRealData() {
@@ -9576,7 +9571,7 @@
         // 写入本机 6 个数据键即视为「有未上云改动」并触发推送（覆盖所有 save 路径，无需逐处埋点）
         function installSyncWriteHook() {
             const WATCH = {};
-            BACKUP_KEYS.forEach(k => { WATCH[k] = 1; });
+            DATA_KEYS.forEach(k => { WATCH[k] = 1; });
             const _orig = localStorage.setItem.bind(localStorage);
             localStorage.setItem = function (k, v) {
                 let ok = true;
