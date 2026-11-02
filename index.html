@@ -2378,7 +2378,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.333</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.334</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -8149,7 +8149,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.333';
+        const APP_VERSION = 'v1.30.334';
 
         function forceRefresh() {
             if ('caches' in window) {
@@ -9217,13 +9217,38 @@
             return JSON.parse(new TextDecoder().decode(pt));
         }
 
+        // v1.30.334：识别 Supabase 因额度/账单被限制的 402（Fair Use Policy）
+        //   症状：所有 API 请求返回 402「Service for this project is restricted…exceed_egress_quota」。
+        //   此时本机数据（localStorage）完全不受影响，只是云端暂时连不上 —— 不该笼统报「同步失败」吓人。
+        //   处理：① 状态条改成明确文案；② 受限期间轮询退避（10s → 5min），省电且不空打请求；
+        //     ③ 一旦探测到恢复（不再 402）立刻自动回到正常节奏。
+        let _cloudRestricted = false;
+        let _restrictedProbe = 0;
+        function _setCloudRestricted(on) {
+            if (!on) _restrictedProbe = 0;              // 恢复正常 → 清掉退避计数，立即回到 10s 节奏
+            if (_cloudRestricted === on) return;
+            _cloudRestricted = on;
+            if (on) {
+                _restrictedProbe = 0;
+                try {
+                    showToast('⚠️ 云端服务被暂停（免费额度用尽 / 账单限制）。\n本机数据完好、照常可用；云端恢复后会自动重新同步。');
+                } catch (e) {}
+            }
+        }
+        function _restrictedNote() {
+            return '云端受限·本机正常';
+        }
         async function sbPullBoard(board, keyHex) {
             if (!SYNC.url || !SYNC.anon || !board) throw new Error('未配置');
             const base = SYNC.url.replace(/\/+$/, '');
             const table = SYNC.table || 'workbench_state';
             const url = base + '/rest/v1/' + table + '?id=eq.' + encodeURIComponent(board) + '&select=data,updated_at';
             const r = await fetch(url, { headers: { apikey: SYNC.anon, Authorization: 'Bearer ' + SYNC.anon, Accept: 'application/json' } });
-            if (!r.ok) throw new Error('HTTP ' + r.status);
+            if (!r.ok) {
+                if (r.status === 402) _setCloudRestricted(true);
+                throw new Error('HTTP ' + r.status + (r.status === 402 ? '（云端受限，本机数据不受影响）' : ''));
+            }
+            _setCloudRestricted(false);
             const arr = await r.json();
             const row = (Array.isArray(arr) && arr.length) ? arr[0] : null;
             if (!row) return null;
@@ -9244,7 +9269,11 @@
                 },
                 body: JSON.stringify([{ id: board, data: stored, updated_at: new Date().toISOString() }])
             });
-            if (!r.ok) throw new Error('HTTP ' + r.status);
+            if (!r.ok) {
+                if (r.status === 402) _setCloudRestricted(true);
+                throw new Error('HTTP ' + r.status + (r.status === 402 ? '（云端受限，本机数据不受影响）' : ''));
+            }
+            _setCloudRestricted(false);
         }
         async function sbPull() { return sbPullBoard(getSyncBoard()); }
         async function sbPush(payload) { return sbPushBoard(getSyncBoard(), payload); }
@@ -9256,7 +9285,11 @@
             const table = SYNC.table || 'workbench_state';
             const url = base + '/rest/v1/' + table + '?id=eq.' + encodeURIComponent(board) + '&select=updated_at';
             const r = await fetch(url, { headers: { apikey: SYNC.anon, Authorization: 'Bearer ' + SYNC.anon, Accept: 'application/json' } });
-            if (!r.ok) throw new Error('HTTP ' + r.status);
+            if (!r.ok) {
+                if (r.status === 402) _setCloudRestricted(true);
+                throw new Error('HTTP ' + r.status + (r.status === 402 ? '（云端受限，本机数据不受影响）' : ''));
+            }
+            _setCloudRestricted(false);
             const arr = await r.json();
             const row = (Array.isArray(arr) && arr.length) ? arr[0] : null;
             return row ? row.updated_at : null;
@@ -9280,7 +9313,7 @@
                     setSync('已同步', 'on');
                 } catch (e) {
                     _lastErr = e.message || String(e);
-                    setSync('同步失败', 'err');
+                    setSync(_cloudRestricted ? _restrictedNote() : '同步失败', 'err');
                 }
             }, 250);
         }
@@ -9496,7 +9529,8 @@
                 }
             } catch (e) {
                 _lastErr = e.message || String(e);
-                setSync('同步失败', 'err');
+                // v1.30.334：云端被额度/账单限制（402）≠ 本机坏了 —— 用明确文案，不吓人
+                setSync(_cloudRestricted ? _restrictedNote() : '同步失败', 'err');
             }
             _syncing = false;
         }
@@ -9507,7 +9541,8 @@
             if (!manual && isEditingEl()) return;   // 自动拉取不打断输入
             await pullState();
             if (manual) {
-                if (_lastErr) showSyncMsg('同步失败：' + _lastErr, 'warn');
+                if (_cloudRestricted) showSyncMsg('云端服务被暂停（免费额度用尽或账单限制）。本机数据完好、可照常使用；云端恢复后会自动重新同步。', 'warn');
+                else if (_lastErr) showSyncMsg('同步失败：' + _lastErr, 'warn');
                 else showSyncMsg('已与云端同步最新数据', 'ok');
             }
         }
@@ -9615,8 +9650,9 @@
             set('sync-board', getSyncBoard() || '（未登录）');
             const m = document.getElementById('sync-msg');
             if (m) m.style.display = 'none';
-            const cls = SYNC.enabled ? (_lastErr ? 'err' : (_lastSyncAt ? 'on' : 'busy')) : '';
-            setSync(SYNC.enabled ? (_lastErr ? '同步失败' : (_lastSyncAt ? '已同步' : '已开启')) : '本地', cls);
+            const cls = SYNC.enabled ? ((_cloudRestricted || _lastErr) ? 'err' : (_lastSyncAt ? 'on' : 'busy')) : '';
+            setSync(SYNC.enabled ? (_cloudRestricted ? _restrictedNote() : (_lastErr ? '同步失败' : (_lastSyncAt ? '已同步' : '已开启'))) : '本地', cls);
+            if (_cloudRestricted) showSyncMsg('云端当前被暂停（免费额度用尽或账单限制）。本机数据完好、可照常使用；云端恢复后会自动重新同步。', 'warn');
             modal.style.display = 'flex';
         }
         function closeSyncPanel() {
@@ -9671,7 +9707,16 @@
             document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncNow(false); });
             // v1.30.330：轮询由 20s 收紧到 10s。因已改为「先轻量探测 updated_at、未变即跳过整包拉取」，
             // 空闲轮询流量仅几十字节，收紧到 10s 也不会增加负担，跨设备刚改完体感更跟手。
-            setInterval(() => { if (document.visibilityState === 'visible') syncNow(false); }, 10000);
+            // v1.30.334：云端被限制（402）期间退避到 5 分钟探一次 —— 省电、不再空打请求；
+            //   一旦探测到恢复（不再 402）立刻自动回到 10s 的正常节奏。
+            setInterval(() => {
+                if (document.visibilityState !== 'visible') return;
+                if (_cloudRestricted) {
+                    _restrictedProbe = (_restrictedProbe + 1) % 30;   // 30 × 10s = 5 分钟
+                    if (_restrictedProbe !== 0) return;
+                }
+                syncNow(false);
+            }, 10000);
             window.addEventListener('beforeunload', () => { if (_dirty) pushState(); });
             document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && _dirty) pushState(); });
         }
