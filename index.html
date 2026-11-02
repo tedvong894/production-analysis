@@ -2392,7 +2392,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.336</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.337</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -7259,9 +7259,14 @@
             const rec = monthlyData.months.find(m => m.name === monthlyData.currentMonth);
             MONTHLY_COLS.forEach(col => {
                 if (isYieldLinkedCol(col) && hasYieldDetail(monthlyData.currentMonth)) return; // 50板/75板：有外贸明细时同步带入不走本地差值；无明细则手动输入并自动生成不良
-                const 产量 = parseFloat(document.getElementById('cur-产量-' + col)?.value) || 0;
-                const 合格 = parseFloat(document.getElementById('cur-合格-' + col)?.value) || 0;
-                const 修补 = parseFloat(document.getElementById('cur-修补-' + col)?.value) || 0;
+                // v1.30.337：输入框不存在（当前不在月度数据页）→ 直接跳过，绝不能用「缺失=0」去覆盖本机的「不良」
+                const _elY = document.getElementById('cur-产量-' + col);
+                const _elQ = document.getElementById('cur-合格-' + col);
+                const _elR = document.getElementById('cur-修补-' + col);
+                if (!_elY || !_elQ || !_elR) return;
+                const 产量 = parseFloat(_elY.value) || 0;
+                const 合格 = parseFloat(_elQ.value) || 0;
+                const 修补 = parseFloat(_elR.value) || 0;
                 const defect = Math.round((产量 - 合格 - 修补) * 10) / 10;
                 const el = document.getElementById('cur-不良-' + col);
                 if (el) el.value = fmtNum(defect);
@@ -8174,7 +8179,14 @@
             MONTHLY_ROWS.forEach(row => {
                 MONTHLY_COLS.forEach(col => {
                     const el = document.getElementById(`cur-${row}-${col}`);
-                    const v = el ? (parseFloat(el.value) || 0) : 0;
+                    // v1.30.337：输入框不存在（当前不在「月度数据」页——如 App 更新后 Service Worker
+                    //   触发的自动刷新、或在驾驶舱切月份）时**保留原值**，绝不能当 0 写回。
+                    //   旧写法 `el ? … : 0` 会把当前月整月数据清零；其中产量/合格等外贸联动列随后会被
+                    //   syncYieldToMonthly 重新导入而看不出异常，只有「手动/外部导入」的数据
+                    //   （下线量、国内板/砌块产量、人工成本手动值）真正丢失。
+                    const _prev = (record.data[row] && record.data[row][col] !== undefined) ? record.data[row][col] : undefined;
+                    const v = el ? (parseFloat(el.value) || 0) : (_prev === undefined ? 0 : _prev);
+                    if (!record.data[row]) record.data[row] = {};   // v1.30.337：老记录可能缺该行，先补齐再写（否则抛错中断整段保存）
                     if (row === '不良') {
                         // 50板/75板：不良随外贸产量质量模块同步带入；国内板/砌块：自动生成（产量−合格−修补），不能忽略
                         record.data[row][col] = (isYieldLinkedCol(col) && hasYieldDetail(monthName))
@@ -8212,7 +8224,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.336';
+        const APP_VERSION = 'v1.30.337';
 
         function forceRefresh() {
             if ('caches' in window) {
@@ -9442,13 +9454,47 @@
                 const v = localStorage.getItem(_syncBaseKey());
                 if (v) { const o = JSON.parse(v); if (o && typeof o === 'object') return o; }
             } catch (e) {}
-            return { yield: {}, order: {}, monthly: [] };
+            return { yield: {}, order: {}, monthly: [], monthlyFields: {} };
+        }
+        // v1.30.337：抽取某月「手动 / 外部导入」的字段（这些字段永不由自动联动生成，
+        //   正是被误清零的那批：下线量、国内板/砌块的产量质量、人工成本手动值、手动模式的工段扣款）。
+        //   用于云端合并时判断「本机这个值是不是本机独有的、云端还没有」的新数据。
+        function _monthManualFields(rec) {
+            const d = (rec && rec.data) || {};
+            const out = {};
+            out['下线量'] = Object.assign({}, d['下线量'] || {});
+            const manualCols = MONTHLY_COLS.filter(c => !isYieldLinkedCol(c));
+            ['产量', '合格', '修补', '不良'].forEach(row => {
+                const o = {};
+                manualCols.forEach(c => { if (d[row] && d[row][c] !== undefined) o[c] = d[row][c]; });
+                out[row] = o;
+            });
+            if (rec && rec.laborCost) out.laborCost = Object.assign({}, rec.laborCost);
+            // 工段扣款：仅「手动输入」模式才算手动数据（自动模式由每日明细汇总生成）
+            if (getDeductionMode(rec) === 'manual') out.deptDeduction = Object.assign({}, d.deptDeduction || {});
+            return out;
+        }
+        // v1.30.337：单个「手动/外部导入」标量字段的三方合并规则
+        //   云端为 0/缺失 且 本机非 0 且 基线也为 0 → 取本机（云端尚无这份数据，多半是本机导入后未上传成功）
+        //   其余一律以云端为准（云端有值 = 云端权威；基线有值而云端为 0 = 别人主动清零，不复活）
+        function _mergeManualScalar(localVal, cloudVal, baseVal) {
+            const l = parseFloat(localVal) || 0;
+            const c = parseFloat(cloudVal) || 0;
+            const b = parseFloat(baseVal) || 0;
+            if (l === 0) return undefined;
+            if (c !== 0) return undefined;
+            if (b !== 0) return undefined;
+            return localVal;
         }
         function saveBaselineFromPayload(payload) {
             try {
-                const b = { [YIELD_KEY]: {}, [ORDER_KEY]: {}, monthly: [] };
+                const b = { [YIELD_KEY]: {}, [ORDER_KEY]: {}, monthly: [], monthlyFields: {} };
                 const m = payload && payload[MONTHLY_KEY];
-                if (m && Array.isArray(m.months)) m.months.forEach(x => { if (x && x.name) b.monthly.push(x.name); });
+                if (m && Array.isArray(m.months)) m.months.forEach(x => {
+                    if (!x || !x.name) return;
+                    b.monthly.push(x.name);
+                    try { b.monthlyFields[x.name] = _monthManualFields(x); } catch (e) {}
+                });
                 [YIELD_KEY, ORDER_KEY].forEach(k => {
                     const obj = payload && payload[k];
                     if (obj && obj.months) Object.keys(obj.months).forEach(mk => {
@@ -9477,11 +9523,70 @@
                     if (!cm || !Array.isArray(cm.months)) { out[MONTHLY_KEY] = JSON.parse(JSON.stringify(lm)); }
                     else {
                         const baseNames = {}; (base.monthly || []).forEach(n => { baseNames[n] = 1; });
-                        const names = {};
-                        cm.months.forEach(m => { if (m && m.name) names[m.name] = 1; });
+                        const names = {}, cloudByName = {};
+                        cm.months.forEach(m => { if (m && m.name) { names[m.name] = 1; cloudByName[m.name] = m; } });
+                        const baseFields = base.monthlyFields || {};
                         lm.months.forEach(m => {
-                            if (!m || !m.name || names[m.name]) return;
-                            if (baseNames[m.name]) return; // 基线有、云端无 → 其他设备已删该月，不本地复活
+                            if (!m || !m.name) return;
+                            // ---- v1.30.337：云端已有该月 → 不再「整月覆盖」，改字段级三方合并 ----
+                            //   保住本机独有的手动/外部导入数据（云端因上传失败而没有的那部分）。
+                            const cm2 = cloudByName[m.name];
+                            if (cm2) {
+                                try {
+                                    const lf = _monthManualFields(m);
+                                    const cf = _monthManualFields(cm2);
+                                    const bf = baseFields[m.name] || null;
+                                    if (!cm2.data) cm2.data = {};
+                                    // 下线量（外部导入）
+                                    MONTHLY_COLS.forEach(col => {
+                                        const mv = _mergeManualScalar(
+                                            lf['下线量'] ? lf['下线量'][col] : undefined,
+                                            cf['下线量'] ? cf['下线量'][col] : undefined,
+                                            bf && bf['下线量'] ? bf['下线量'][col] : undefined);
+                                        if (mv === undefined) return;
+                                        if (!cm2.data['下线量']) cm2.data['下线量'] = {};
+                                        cm2.data['下线量'][col] = mv;
+                                    });
+                                    // 非外贸联动列的产量质量（国内板/砌块 = 手工录入）
+                                    ['产量', '合格', '修补', '不良'].forEach(row => {
+                                        MONTHLY_COLS.forEach(col => {
+                                            if (isYieldLinkedCol(col)) return;
+                                            const mv = _mergeManualScalar(
+                                                lf[row] ? lf[row][col] : undefined,
+                                                cf[row] ? cf[row][col] : undefined,
+                                                bf && bf[row] ? bf[row][col] : undefined);
+                                            if (mv === undefined) return;
+                                            if (!cm2.data[row]) cm2.data[row] = {};
+                                            cm2.data[row][col] = mv;
+                                        });
+                                    });
+                                    // 人工成本手动值
+                                    if (lf.laborCost) {
+                                        const target = cm2.laborCost = cm2.laborCost || {};
+                                        Object.keys(lf.laborCost).forEach(k => {
+                                            const mv = _mergeManualScalar(
+                                                lf.laborCost[k], cf.laborCost ? cf.laborCost[k] : undefined,
+                                                bf && bf.laborCost ? bf.laborCost[k] : undefined);
+                                            if (mv === undefined) return;
+                                            target[k] = mv;
+                                        });
+                                    }
+                                    // 手动模式下的工段质量扣款
+                                    if (lf.deptDeduction) {
+                                        if (!cm2.data.deptDeduction) cm2.data.deptDeduction = {};
+                                        DEPT_NAMES.forEach(dn => {
+                                            const mv = _mergeManualScalar(
+                                                lf.deptDeduction[dn], cf.deptDeduction ? cf.deptDeduction[dn] : undefined,
+                                                bf && bf.deptDeduction ? bf.deptDeduction[dn] : undefined);
+                                            if (mv === undefined) return;
+                                            cm2.data.deptDeduction[dn] = mv;
+                                        });
+                                    }
+                                } catch (e) {}
+                                return;
+                            }
+                            // 云端无该月 → 原逻辑（基线无才并入：基线有=其他设备已删该月，不本地复活）
+                            if (baseNames[m.name]) return;
                             let real = false;
                             try { real = monthHasProductionData(m); } catch (e) {}
                             if (!real && m.data && m.data.deptDeduction) real = Object.keys(m.data.deptDeduction).some(k => +m.data.deptDeduction[k]);
