@@ -1351,7 +1351,7 @@
 
     <div class="header" data-page-node-id="V1dCJVe8T7rMyqAP829KqH">
         <h1 data-page-node-id="fmhNgqHMHBVOqwrWqXDCMB">生产经营分析系统</h1>
-        <p id="page-subtitle" data-page-node-id="edlWYBtpP6nDaUfJ0mMShR">经营驾驶舱</p>
+        <p id="page-subtitle" data-page-node-id="edlWYBtpP6nDaUfJ0mMShR">元筑ALC生产经营数据面板</p>
         <div class="auth-user" id="auth-user">
             <span class="auth-email" id="auth-user-email"></span>
             <span class="auth-logout" onclick="doLogout()">退出</span>
@@ -2039,7 +2039,7 @@
     <div class="page active" id="page-cockpit" data-page-node-id="Aq3jF43UNkHQjwHpEjFxaL">
         <div class="cockpit-header" data-page-node-id="uoD0WjsSjEY1ePxV7Xyy3P">
             <div data-page-node-id="kTJAkOJGEN2pYCXx8BJzrP">
-                <div class="cockpit-title" data-page-node-id="ykmNR8dHHi741k29aVTqrt">经营驾驶舱</div>
+                <div class="cockpit-title" data-page-node-id="ykmNR8dHHi741k29aVTqrt">元筑ALC生产经营数据面板</div>
                 <div class="cockpit-meta" id="cockpit-meta" data-page-node-id="oETc7BUaHZNHxI0GZmyLKP">—</div>
             </div>
             <div class="cockpit-actions" style="display:flex; gap:8px;" data-page-node-id="QWQUk0Ju7gIUBu2IQ5qxFA">
@@ -2099,8 +2099,6 @@
             </div>
         </div>
 
-        <!-- 驾驶舱：底部简要分析 -->
-        <div id="cockpit-brief-analysis"></div>
     </div>
 
     <!-- 批量编辑弹窗 -->
@@ -2314,14 +2312,12 @@
         <div class="analysis-card" data-page-node-id="AnZ1">
             <div class="analysis-card-title"><span class="idx">1</span>外贸产量质量</div>
             <div id="analysis-yield-table"></div>
-            <div id="analysis-brief-yield"></div>
         </div>
 
         <!-- 指标2：各工段质量扣款 -->
         <div class="analysis-card" data-page-node-id="AnZ2">
             <div class="analysis-card-title"><span class="idx">2</span>团队表现</div>
             <div id="analysis-deduction-table"></div>
-            <div id="analysis-brief-deduction"></div>
         </div>
 
         <!-- 指标3：人工成本 -->
@@ -2335,7 +2331,6 @@
                 </div>
             </div>
             <div id="analysis-labor-table"></div>
-            <div id="analysis-brief-labor"></div>
         </div>
 
         <!-- 指标4：经营利润 -->
@@ -2349,7 +2344,6 @@
                 </div>
             </div>
             <div id="analysis-profit-table"></div>
-            <div id="analysis-brief-profit"></div>
         </div>
     </div>
 
@@ -2384,7 +2378,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.331</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.332</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -2837,7 +2831,7 @@
             const tabBtn = document.querySelector('.tab-item[data-tab="' + tab + '"]');
             if (tabBtn) tabBtn.classList.add('active');
             const subEl = document.getElementById('page-subtitle');
-            if (subEl) subEl.textContent = ({ cockpit: '经营驾驶舱', profit: '经营利润', wage: '人工成本', order: '订单履约', yield: '外贸产量质量', monthly: '月度数据', params: '基础设置', analysis: '经营分析', manalysis: '月度分析' })[tab] || '经营驾驶舱';
+            if (subEl) subEl.textContent = ({ cockpit: '元筑ALC生产经营数据面板', profit: '经营利润', wage: '人工成本', order: '订单履约', yield: '外贸产量质量', monthly: '月度数据', params: '基础设置', analysis: '经营分析', manalysis: '月度分析' })[tab] || '经营驾驶舱';
 
             if (tab === 'params') {
                 document.getElementById('page-subtitle').textContent = '基础设置';
@@ -2865,7 +2859,7 @@
                 document.getElementById('page-subtitle').textContent = '经营利润';
                 renderProfit();
             } else if (tab === 'cockpit') {
-                document.getElementById('page-subtitle').textContent = '经营驾驶舱';
+                document.getElementById('page-subtitle').textContent = '元筑ALC生产经营数据面板';
                 renderCockpit();
             } else if (tab === 'analysis') {
                 document.getElementById('page-subtitle').textContent = '经营分析';
@@ -3218,6 +3212,8 @@
         // 月度数据历史 + 经营利润历史 折叠状态
         window.historyMonthsCollapsed = window.historyMonthsCollapsed || false;
         window.profitHistoryCollapsed = window.profitHistoryCollapsed || false;
+        window.yieldHistoryCollapsed = window.yieldHistoryCollapsed || false;
+        window.orderHistoryCollapsed = window.orderHistoryCollapsed || false;
         function toggleHistoryMonths() {
             window.historyMonthsCollapsed = !window.historyMonthsCollapsed;
             const c = document.getElementById('history-months-content');
@@ -3231,6 +3227,21 @@
             const t = document.getElementById('profit-history-title');
             if (c) c.classList.toggle('collapsed', window.profitHistoryCollapsed);
             if (t) t.classList.toggle('collapsed', window.profitHistoryCollapsed);
+        }
+        // v1.30.332：外贸产量质量 / 订单履约 历史数据表 折叠（复用 collapse-toggle 样式与逻辑）
+        function toggleYieldHistory() {
+            window.yieldHistoryCollapsed = !window.yieldHistoryCollapsed;
+            const c = document.getElementById('yield-history-content');
+            const t = document.getElementById('yield-history-title');
+            if (c) c.classList.toggle('collapsed', window.yieldHistoryCollapsed);
+            if (t) t.classList.toggle('collapsed', window.yieldHistoryCollapsed);
+        }
+        function toggleOrderHistory() {
+            window.orderHistoryCollapsed = !window.orderHistoryCollapsed;
+            const c = document.getElementById('order-history-content');
+            const t = document.getElementById('order-history-title');
+            if (c) c.classList.toggle('collapsed', window.orderHistoryCollapsed);
+            if (t) t.classList.toggle('collapsed', window.orderHistoryCollapsed);
         }
 
         function renderHistoryMonths() {
@@ -4063,7 +4074,9 @@
             if (!container) return;
             const history = Object.keys(yieldData.months).filter(k => k !== yieldData.currentMonth);
             if (history.length === 0) { container.innerHTML = ''; return; }
-            let html = '<div class="section-title">历史数据（点「编辑」可切回该月修改）</div>';
+            const collapsed = window.yieldHistoryCollapsed ? 'collapsed' : '';
+            let html = `<div class="section-title collapse-toggle ${collapsed}" id="yield-history-title" onclick="toggleYieldHistory()"><span class="collapse-arrow"></span>历史数据（点「编辑」可切回该月修改）</div>`;
+            html += `<div class="collapse-content ${collapsed}" id="yield-history-content">`;
             html += '<div class="card"><table class="compact-table">';
             html += '<thead><tr><th>月份</th><th class="right">累计天数</th><th class="right">累计产量</th><th class="right">合格率</th><th class="right">不良率</th><th class="right">修补率</th><th class="right">操作</th></tr></thead><tbody>';
             history.forEach(k => {
@@ -4079,6 +4092,7 @@
                 html += `<tr><td>${k}</td><td class="right">${uniqueDays}</td><td class="right">${fmtNum(totalYield)}</td><td class="right">${qualRate}</td><td class="right">${defectRate}</td><td class="right">${repairRate}</td><td class="right" style="white-space:nowrap;"><button class="btn-sm" onclick="changeYieldMonth('${k}')">编辑</button> <button class="btn-icon" onclick="deleteYieldMonth('${k}')" title="删除">🗑️</button></td></tr>`;
             });
             html += '</tbody></table></div>';
+            html += '</div>';
             container.innerHTML = html;
         }
 
@@ -4593,7 +4607,9 @@
             const history = Object.keys(orderData.months).filter(k => k !== orderData.currentMonth);
             if (history.length === 0) { container.innerHTML = ''; return; }
             const chain = computeOrderChain();
-            let html = '<div class="section-title">历史数据（点「编辑」可切回该月修改）</div>';
+            const collapsed = window.orderHistoryCollapsed ? 'collapsed' : '';
+            let html = `<div class="section-title collapse-toggle ${collapsed}" id="order-history-title" onclick="toggleOrderHistory()"><span class="collapse-arrow"></span>历史数据（点「编辑」可切回该月修改）</div>`;
+            html += `<div class="collapse-content ${collapsed}" id="order-history-content">`;
             html += '<div class="card" style="overflow-x:auto;"><table class="compact-table">';
             html += '<thead><tr><th>月份</th><th class="right">月初库存</th><th class="right">月初订单</th><th class="right">可入库产量</th><th class="right">累积订单</th><th class="right">累积发货</th><th class="right">累积库存</th><th class="right">待发订单</th><th class="right">无订单库存</th><th class="right">操作</th></tr></thead><tbody>';
             history.forEach(k => {
@@ -4610,6 +4626,7 @@
                     <td class="right" style="white-space:nowrap;"><button class="btn-sm" onclick="changeOrderMonth('${k}')">编辑</button> <button class="btn-icon" onclick="deleteOrderMonth('${k}')" title="删除">🗑️</button></td></tr>`;
             });
             html += '</tbody></table></div>';
+            html += '</div>';
             container.innerHTML = html;
         }
 
@@ -5326,8 +5343,6 @@
             pHtml += `</tbody></table>`;
             const cpb = document.getElementById('cockpit-profit-body');
             if (cpb) cpb.innerHTML = pHtml;
-            // 驾驶舱底部「简要分析」块（仅首次挂载，避免覆盖正在编辑的状态）
-            mountBriefAnalysis('cockpit-brief-analysis', BA_COCKPIT_KEY);
             // 驾驶舱底部「本阶段综合分析」块（仅首次挂载，避免覆盖正在编辑的状态）
             mountBriefAnalysis('cockpit-stage-analysis', BA_STAGE_KEY);
         }
@@ -6354,11 +6369,7 @@
                     pEl.innerHTML = h;
                 }
             }
-            // 挂载各指标「简要分析」块（仅首次，避免覆盖正在编辑的状态）
-            mountBriefAnalysis('analysis-brief-yield', BA_ANALYSIS_KEYS.yield);
-            mountBriefAnalysis('analysis-brief-deduction', BA_ANALYSIS_KEYS.deduction);
-            mountBriefAnalysis('analysis-brief-profit', BA_ANALYSIS_KEYS.profit);
-            mountBriefAnalysis('analysis-brief-labor', BA_ANALYSIS_KEYS.labor);
+            // v1.30.332：经营分析各指标「简要分析」块已移除（仅保留驾驶舱「本阶段综合分析」）
         }
 
         // ============ 月度分析（未完成月份的月度内数据分析） ============
@@ -8138,7 +8149,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.331';
+        const APP_VERSION = 'v1.30.332';
 
         function forceRefresh() {
             if ('caches' in window) {
