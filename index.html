@@ -2450,7 +2450,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.338</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.339</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -4056,6 +4056,8 @@
                     record.data[row][col] = newVal;
                 });
             });
+            return changed;
+        }
 
         // ============ 每日外贸下线产量 / 国内板·砌块 每日产量质量（v1.30.338） ============
         // offlineRecords：每日外贸下线产量（仅 50板/75板），仅供给月度数据「下线量」，不参与任何其它公式。
@@ -4346,9 +4348,6 @@
             m.domesticRecords.splice(idx, 1);
             saveDomestic();
             showToast('已删除');
-        }
-
-            return changed;
         }
 
         // 确保月份数据含「合格」行：旧数据由 合格 = 产量−修补−不良 反推
@@ -8578,7 +8577,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.338';
+        const APP_VERSION = 'v1.30.339';
 
         function forceRefresh() {
             if ('caches' in window) {
