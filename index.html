@@ -2450,7 +2450,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.339</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.340</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -2516,6 +2516,17 @@
         // v1.30.220：仅改显示名，数据键仍为 '产量'，不改动任何公式调用
         const MONTHLY_ROW_LABEL = { '产量': '分拣量' };
         function monthlyRowLabel(row) { return MONTHLY_ROW_LABEL[row] || row; }
+        // v1.30.340：产量基数口径
+        //   外贸 50板/75板：基数 = 「分拣量」（数据键 '产量'），下线量只是外部导入的展示数据
+        //   国内板/砌块：没有分拣量概念，基数 = 「下线量」（数据键 '下线量'），
+        //     该值由「每日产量质量」模块里录入的国内板/砌块「产量」按月累计而来
+        function isDomesticCol(col) { return col === '国内板' || col === '砌块'; }
+        function monthlyBaseRow(col) { return isDomesticCol(col) ? '下线量' : '产量'; }
+        function monthlyBaseQty(data, col) {
+            if (!data) return 0;
+            const row = monthlyBaseRow(col);
+            return parseFloat(data[row] ? data[row][col] : 0) || 0;
+        }
         // v1.30.221：单规格可入库安全口径 = 分拣量 − 不良，强制限制在 [0, 分拣量]
         // 说明：正常数据不受影响；仅当某规格「合格 + 修补 > 分拣量」（不良为负）时兜底，保证可入库不可能大于分拣量
         function safeGood(qty, defect) {
@@ -2527,11 +2538,13 @@
         function monthlyAnomalyHtml(monthLabel, data) {
             const bad = [];
             MONTHLY_COLS.forEach(col => {
-                const y = parseFloat(data['产量']?.[col]) || 0;
+                // v1.30.340：基数——外贸用分拣量，国内板/砌块用下线量
+                const y = monthlyBaseQty(data, col);
+                const yLabel = isDomesticCol(col) ? '下线量' : '分拣量';
                 const q = parseFloat(data['合格']?.[col]) || 0;
                 const r = parseFloat(data['修补']?.[col]) || 0;
                 if (y > 0 && (q + r - y) > 0.05) {
-                    bad.push(`${col}：合格 ${fmtNum(q)} + 修补 ${fmtNum(r)} − 分拣量 ${fmtNum(y)} = ${fmtNum(Math.round((y - q - r) * 10) / 10)}（不良为负）`);
+                    bad.push(`${col}：合格 ${fmtNum(q)} + 修补 ${fmtNum(r)} − ${yLabel} ${fmtNum(y)} = ${fmtNum(Math.round((y - q - r) * 10) / 10)}（不良为负）`);
                 }
             });
             if (bad.length === 0) return '';
@@ -2696,7 +2709,7 @@
                     if (!m.data['合格']) m.data['合格'] = {};
                     MONTHLY_COLS.forEach(col => {
                         if (m.data['合格'][col] === undefined) {
-                            const 产量 = parseFloat(m.data['产量']?.[col]) || 0;
+                            const 产量 = monthlyBaseQty(m.data, col);
                             const 修补 = parseFloat(m.data['修补']?.[col]) || 0;
                             const 不良 = parseFloat(m.data['不良']?.[col]) || 0;
                             m.data['合格'][col] = Math.round((产量 - 修补 - 不良) * 10) / 10;
@@ -3075,6 +3088,9 @@
                 monthlyData.months.push(monthRecord);
             }
             if (!monthRecord.laborCost) monthRecord.laborCost = createEmptyLaborCost();
+            // v1.30.340：必须先迁移（国内板/砌块 旧「分拣量」→「下线量」），再反推「合格」行——
+            //   否则历史月份会用空的下线量算出负的合格数
+            const migrated = migrateDomesticOfflineBase();
             ensureQualifiedRow(monthRecord);
             const pd = monthRecord.data;
 
@@ -3082,7 +3098,7 @@
             const yieldSynced = syncYieldToMonthly(monthName);
             const offSynced = syncOfflineToMonthly(monthName);
             const domSynced = syncDomesticToMonthly(monthName);
-            if (yieldSynced || offSynced || domSynced) saveMonthly();
+            if (yieldSynced || offSynced || domSynced || migrated) saveMonthly();
             // v1.30.276：同步工段质量扣款每日明细累计（仅存在每日明细的月份覆盖；函数内有变更才 saveMonthly）
             syncDeductionToMonthly(monthName);
 
@@ -3159,10 +3175,14 @@
                                         <tr>
                                             <td>${monthlyRowLabel(row)}</td>
                                             ${MONTHLY_COLS.map(col => {
+                                                // v1.30.340：国内板/砌块没有分拣量概念 → 该格显示 "-"
+                                                if (row === '产量' && isDomesticCol(col)) {
+                                                    return `<td class="right">-</td>`;
+                                                }
                                                 if (isAuto) {
                                                     const defect = (isMonthlyAutoCol('不良', col, monthName))
                                                         ? Math.round(getMonthlyAutoVal('不良', col, monthName) * 10) / 10
-                                                        : Math.round(((parseFloat(pd['产量']?.[col]) || 0) - (parseFloat(pd['合格']?.[col]) || 0) - (parseFloat(pd['修补']?.[col]) || 0)) * 10) / 10;
+                                                        : Math.round((monthlyBaseQty(pd, col) - (parseFloat(pd['合格']?.[col]) || 0) - (parseFloat(pd['修补']?.[col]) || 0)) * 10) / 10;
                                                     return `<td class="right"><input type="number" id="cur-不良-${col}" value="${fmtNum(defect)}" class="monthly-input" readonly title="${(isMonthlyAutoCol('不良', col, monthName)) ? '每日产量质量模块自动带入（只读）' : '自动计算：不良 = 分拣量 − 合格 − 修补'}"></td>`;
                                                 }
                                                 // 下线量为外部导入数据，不参与外贸联动
@@ -3171,10 +3191,14 @@
                                                 if (linked) {
                                                     linkedVal = getMonthlyAutoVal(row, col, monthName);
                                                 }
+                                                // v1.30.340：国内板/砌块 的下线量是「= 分拣量」的派生值，提示语单独说明
+                                                const linkedTitle = (row === '下线量' && (col === '国内板' || col === '砌块'))
+                                                    ? '国内板/砌块：无独立下线计量口径，下线量 = 分拣量（自动）'
+                                                    : '每日产量质量模块自动带入（只读）';
                                                 return `
                                                 <td class="right">
                                                     ${linked
-                                                        ? `<input type="number" id="cur-${row}-${col}" value="${fmtNum(linkedVal)}" class="monthly-input" readonly title="每日产量质量模块自动带入（只读）">`
+                                                        ? `<input type="number" id="cur-${row}-${col}" value="${fmtNum(linkedVal)}" class="monthly-input" readonly title="${linkedTitle}">`
                                                         : `<input type="number" id="cur-${row}-${col}" value="${fmtNum(pd[row]?.[col] ?? 0)}" class="monthly-input" min="0" onchange="onMonthlyCellEdit('recalc')">`
                                                     }
                                                 </td>
@@ -4099,8 +4123,12 @@
                 if (row === '下线量') return hasOfflineSpec(monthName, col);
                 return hasYieldDetail(monthName);
             }
-            if (col === '国内板' || col === '砌块') {
-                if (row === '下线量') return false; // 国内板/砌块 下线量始终手动
+            if (isDomesticCol(col)) {
+                // v1.30.340：国内板/砌块 没有「分拣量」概念——每日记录的「产量」就是它们的「下线量」，
+                //   也是它们的产量基数；有每日明细 → 自动只读，无明细 → 可手填
+                if (row === '下线量') return hasDomesticSpec(monthName, col);
+                // 分拣量（产量行）对国内板/砌块无意义 → 视为自动（界面显示 "-"），粘贴/批量导入一律跳过
+                if (row === '产量') return true;
                 return hasDomesticSpec(monthName, col);
             }
             return false;
@@ -4115,7 +4143,11 @@
                 if (row === '下线量') return getOfflineSpecSummary(monthName, col)['下线量'] || 0;
                 return getYieldSpecSummary(monthName, col)[row] || 0;
             }
-            if (col === '国内板' || col === '砌块') {
+            if (isDomesticCol(col)) {
+                // v1.30.340：国内板/砌块每日记录的「产量」= 它们的下线量（= 产量基数）
+                if (row === '下线量') return getDomesticSpecSummary(monthName, col)['产量'] || 0;
+                // 分拣量（产量行）对国内板/砌块无意义
+                if (row === '产量') return 0;
                 return getDomesticSpecSummary(monthName, col)[row] || 0;
             }
             return 0;
@@ -4146,12 +4178,22 @@
             if (recs.length === 0) return false;
             const record = findMonthlyRecord(monthName);
             if (!record) return false;
-            const map = { 产量: 'yieldQty', 合格: 'qualified', 修补: 'repair', 不良: 'defect' };
+            const map = { 合格: 'qualified', 修补: 'repair', 不良: 'defect' };
             let changed = false;
             ['国内板', '砌块'].forEach(col => {
                 const f = recs.filter(r => r.spec === col);
                 if (f.length === 0) return;
-                ['产量', '合格', '修补', '不良'].forEach(row => {
+                // v1.30.340：每日记录的「产量」= 国内板/砌块的「下线量」，也是它们的产量基数
+                if (!record.data['下线量']) record.data['下线量'] = {};
+                const off = Math.round(f.reduce((s2, r) => s2 + (parseFloat(r.yieldQty) || 0), 0) * 10) / 10;
+                const oldOff = parseFloat(record.data['下线量'][col]) || 0;
+                if (Math.abs(oldOff - off) > 1e-9) changed = true;
+                record.data['下线量'][col] = off;
+                // 分拣量（产量行）对国内板/砌块无意义 → 清零（历史值已迁移到下线量）
+                if (!record.data['产量']) record.data['产量'] = {};
+                const oldSort = parseFloat(record.data['产量'][col]) || 0;
+                if (oldSort !== 0) { changed = true; record.data['产量'][col] = 0; }
+                ['合格', '修补', '不良'].forEach(row => {
                     const field = map[row];
                     const v = Math.round(f.reduce((s2, r) => s2 + (parseFloat(r[field]) || 0), 0) * 10) / 10;
                     if (!record.data[row]) record.data[row] = {};
@@ -4162,6 +4204,28 @@
             });
             return changed;
         }
+        // v1.30.340：历史数据迁移——国内板/砌块原来的「分拣量」其实就是它们的下线量（产量基数），
+        //   迁到「下线量」，并把「分拣量」清零（该列对国内板/砌块已无意义，界面显示 "-"）。
+        function migrateDomesticOfflineBase() {
+            const list = (monthlyData && Array.isArray(monthlyData.months)) ? monthlyData.months : [];
+            let changed = false;
+            list.forEach(m => {
+                if (!m || !m.name || !m.data) return;
+                if (!m.data['下线量']) m.data['下线量'] = {};
+                if (!m.data['产量']) m.data['产量'] = {};
+                ['国内板', '砌块'].forEach(col => {
+                    const oldSort = parseFloat(m.data['产量'][col]) || 0;
+                    const oldOff = parseFloat(m.data['下线量'][col]) || 0;
+                    if (oldSort > 0 && oldOff === 0) {
+                        m.data['下线量'][col] = Math.round(oldSort * 10) / 10;
+                        changed = true;
+                    }
+                    if (oldSort !== 0) { m.data['产量'][col] = 0; changed = true; }
+                });
+            });
+            return changed;
+        }
+
         function saveOffline() {
             saveYield();
             syncOfflineToMonthly(yieldData.currentMonth);
@@ -4282,8 +4346,9 @@
             if (labelEl) labelEl.textContent = yieldData.currentMonth || '';
             const rows = ['产量', '合格', '修补', '不良'];
             const recs = [...m.domesticRecords].sort((a, b) => (parseInt(a.date) || 0) - (parseInt(b.date) || 0) || (a.spec > b.spec ? 1 : -1));
-            if (recs.length === 0) { box.innerHTML = '<div class="analysis-empty">暂无国内板/砌块每日产量质量记录，点右上「+ 录入」开始录入（每行4列：产量、合格、修补、不良）。</div>'; return; }
-            let h = '<div class="table-scroll"><table><thead><tr><th>日期</th><th>规格</th><th class="right">产量</th><th class="right">合格</th><th class="right">修补</th><th class="right">不良</th><th style="width:40px;"></th></tr></thead><tbody>';
+            if (recs.length === 0) { box.innerHTML = '<div class="analysis-empty">暂无国内板/砌块每日产量质量记录，点右上「+ 录入」开始录入（每行4列：下线量、合格、修补、不良）。</div>'; return; }
+            // v1.30.340：国内板/砌块没有分拣量，这里录入的「产量」就是它们的「下线量」
+            let h = '<div class="table-scroll"><table><thead><tr><th>日期</th><th>规格</th><th class="right">下线量</th><th class="right">合格</th><th class="right">修补</th><th class="right">不良</th><th style="width:40px;"></th></tr></thead><tbody>';
             recs.forEach(r => {
                 const map = { 产量: 'yieldQty', 合格: 'qualified', 修补: 'repair', 不良: 'defect' };
                 let cells = '';
@@ -4356,7 +4421,7 @@
             if (!monthRecord.data['合格']) monthRecord.data['合格'] = {};
             MONTHLY_COLS.forEach(col => {
                 if (monthRecord.data['合格'][col] === undefined) {
-                    const 产量 = parseFloat(monthRecord.data['产量']?.[col]) || 0;
+                    const 产量 = monthlyBaseQty(monthRecord.data, col);
                     const 修补 = parseFloat(monthRecord.data['修补']?.[col]) || 0;
                     const 不良 = parseFloat(monthRecord.data['不良']?.[col]) || 0;
                     monthRecord.data['合格'][col] = Math.round((产量 - 修补 - 不良) * 10) / 10;
@@ -5500,7 +5565,8 @@
             let totalFixedCost = 0; // 固定成本＝人工＋管理费用（按可入库产量分摊后合计）
             let totalVarCost = 0;   // 可变成本＝总成本－固定成本（材料/损耗/辅料/水电/包装/运费/提成）
             const products = PROFIT_PRODUCTS.map(p => {
-                const qty = monthData['产量']?.[p.col] || 0;
+                // v1.30.340：基数——外贸用分拣量，国内板/砌块用下线量（否则国内收入会归零）
+                const qty = monthlyBaseQty(monthData, p.col);
                 const defect = monthData['不良']?.[p.col] || 0;
                 const good = safeGood(qty, defect);
 
@@ -5645,15 +5711,20 @@
             const monthlyRecordForDomestic = findMonthlyRecord(selMonth);
             const domesticData = monthlyRecordForDomestic ? monthlyRecordForDomestic.data : createEmptyMonthData();
             const allSpecs = ['50板', '75板', '国内板', '砌块'];
-            let yOffline = 0, yYield = 0, yQual = 0, yDef = 0, yRep = 0;
+            let yOffline = 0, yYield = 0, yQual = 0, yDef = 0, yRep = 0, yBase = 0;
             const specRows = allSpecs.map(spec => {
-                const sYield = parseFloat(domesticData['产量']?.[spec]) || 0;
+                const isDom = isDomesticCol(spec);
+                // v1.30.340：产量基数——外贸用分拣量，国内板/砌块用下线量
+                const sBase = monthlyBaseQty(domesticData, spec);
+                // 分拣量列：国内板/砌块无此概念 → 0（界面显示 "-"）
+                const sYield = isDom ? 0 : sBase;
                 const sQual = parseFloat(domesticData['合格']?.[spec]) || 0;
                 const sRep = parseFloat(domesticData['修补']?.[spec]) || 0;
                 const sDef = parseFloat(domesticData['不良']?.[spec]) || 0;
-                const sOffline = parseFloat(domesticData['下线量']?.[spec]) || 0;
-                yYield += sYield; yQual += sQual; yDef += sDef; yRep += sRep; yOffline += sOffline;
-                return { spec, sYield, sQual, sDef, sRep, sOffline };
+                // 下线量列：外贸=外部导入(仅展示)；国内板/砌块=产量基数(=每日记录产量)
+                const sOffline = isDom ? sBase : (parseFloat(domesticData['下线量']?.[spec]) || 0);
+                yYield += sYield; yQual += sQual; yDef += sDef; yRep += sRep; yOffline += sOffline; yBase += sBase;
+                return { spec, sYield, sQual, sDef, sRep, sOffline, isDom, sBase };
             });
             // 外贸行 = 50板 + 75板（仅用于展示，不计入合计，避免重复）
             const r50 = specRows.find(r => r.spec === '50板') || { sYield: 0, sQual: 0, sRep: 0, sDef: 0, sOffline: 0 };
@@ -5668,11 +5739,15 @@
             };
 
             const renderRow = (r, cls = '') => {
-                const qualRate = r.sYield > 0 ? fmtPct(r.sQual / r.sYield * 100) : '0.00%';
-                const repairRate = r.sYield > 0 ? fmtPct(r.sRep / r.sYield * 100) : '0.00%';
-                const defectRate = r.sYield > 0 ? fmtPct(r.sDef / r.sYield * 100) : '0.00%';
-                // v1.30.220：下线量（外部导入，仅展示）+ 产量改称「分拣量」，并取消「合格量」列
-                return `<tr${cls ? ' class="' + cls + '"' : ''}><td>${r.spec}</td><td>${fmtNum(r.sOffline)}</td><td>${fmtNum(r.sYield)}</td><td>${fmtNum(r.sRep)}</td><td>${fmtNum(r.sDef)}</td><td>${qualRate}</td><td>${repairRate}</td><td>${defectRate}</td></tr>`;
+                // v1.30.340：比率一律按「产量基数」计算（外贸=分拣量，国内板/砌块=下线量）
+                const base = (r.sBase !== undefined) ? r.sBase : r.sYield;
+                const qualRate = base > 0 ? fmtPct(r.sQual / base * 100) : '0.00%';
+                const repairRate = base > 0 ? fmtPct(r.sRep / base * 100) : '0.00%';
+                const defectRate = base > 0 ? fmtPct(r.sDef / base * 100) : '0.00%';
+                // 国内板/砌块无分拣量 → 分拣量列显示 "-"
+                const sortCell = r.isDom ? '-' : fmtNum(r.sYield);
+                // v1.30.220：下线量 + 产量改称「分拣量」，并取消「合格量」列
+                return `<tr${cls ? ' class="' + cls + '"' : ''}><td>${r.spec}</td><td>${fmtNum(r.sOffline)}</td><td>${sortCell}</td><td>${fmtNum(r.sRep)}</td><td>${fmtNum(r.sDef)}</td><td>${qualRate}</td><td>${repairRate}</td><td>${defectRate}</td></tr>`;
             };
 
             const isCollapsed = window.cockpitExportCollapsed === true;
@@ -5686,9 +5761,10 @@
                 yHtml += `<tr class="export-divider"><td colspan="8"></td></tr>`;
             }
             specRows.filter(r => r.spec !== '50板' && r.spec !== '75板').forEach(r => yHtml += renderRow(r));
-            const totalQualRate = yYield > 0 ? fmtPct(yQual / yYield * 100) : '0.00%';
-            const totalRepairRate = yYield > 0 ? fmtPct(yRep / yYield * 100) : '0.00%';
-            const totalDefectRate = yYield > 0 ? fmtPct(yDef / yYield * 100) : '0.00%';
+            // v1.30.340：合计比率按「产量基数合计」计算（否则国内板/砌块的合格数会配外贸分拣量）
+            const totalQualRate = yBase > 0 ? fmtPct(yQual / yBase * 100) : '0.00%';
+            const totalRepairRate = yBase > 0 ? fmtPct(yRep / yBase * 100) : '0.00%';
+            const totalDefectRate = yBase > 0 ? fmtPct(yDef / yBase * 100) : '0.00%';
             yHtml += `<tr class="total"><td>合计</td><td>${fmtNum(yOffline)}</td><td>${fmtNum(yYield)}</td><td>${fmtNum(yRep)}</td><td>${fmtNum(yDef)}</td><td>${totalQualRate}</td><td>${totalRepairRate}</td><td>${totalDefectRate}</td></tr>`;
             yHtml += `</tbody></table>`;
             const cyb = document.getElementById('cockpit-yield-body');
@@ -6097,7 +6173,7 @@
             const rec = findMonthlyRecord(monthName);
             if (!rec || !rec.data) return 0;
             return MONTHLY_COLS.reduce((sum, col) => {
-                const yieldQty = parseFloat(rec.data['产量']?.[col]) || 0;
+                const yieldQty = monthlyBaseQty(rec.data, col);
                 const defect = parseFloat(rec.data['不良']?.[col]) || 0;
                 return sum + safeGood(yieldQty, defect);
             }, 0);
@@ -6107,7 +6183,8 @@
             const rec = findMonthlyRecord(monthName);
             if (!rec || !rec.data) return 0;
             return ['国内板', '砌块'].reduce((sum, col) => {
-                const y = parseFloat(rec.data['产量']?.[col]) || 0;
+                // v1.30.340：国内板/砌块的产量基数 = 下线量
+                const y = monthlyBaseQty(rec.data, col);
                 const d = parseFloat(rec.data['不良']?.[col]) || 0;
                 return sum + safeGood(y, d);
             }, 0);
@@ -7613,7 +7690,10 @@
             MONTHLY_COLS.forEach(col => {
                 if (isMonthlyAutoCol('不良', col, monthlyData.currentMonth)) return; // 自动带入列（50板/75板有外贸明细、国内板/砌块有每日明细）不走本地差值
                 // v1.30.337：输入框不存在（当前不在月度数据页）→ 直接跳过，绝不能用「缺失=0」去覆盖本机的「不良」
-                const _elY = document.getElementById('cur-产量-' + col);
+                // v1.30.340：基数元素——外贸取「分拣量(产量行)」，国内板/砌块取「下线量行」
+                const _elY = isDomesticCol(col)
+                    ? document.getElementById('cur-下线量-' + col)
+                    : document.getElementById('cur-产量-' + col);
                 const _elQ = document.getElementById('cur-合格-' + col);
                 const _elR = document.getElementById('cur-修补-' + col);
                 if (!_elY || !_elQ || !_elR) return;
@@ -7682,13 +7762,15 @@
 
         function calcQualifiedOutput(deptName, monthData, monthName) {
             const 产量 = monthData?.['产量'] || {};
+            // v1.30.340：国内板/砌块没有分拣量，其产量基数 = 下线量
+            const 下线量 = monthData?.['下线量'] || {};
             const 修补 = monthData?.['修补'] || {};
             const 不良 = monthData?.['不良'] || {};
 
             const q50 = (产量['50板'] || 0) - (修补['50板'] || 0) - (不良['50板'] || 0);
             const q75 = (产量['75板'] || 0) - (修补['75板'] || 0) - (不良['75板'] || 0);
-            const qDomestic = (产量['国内板'] || 0) - (修补['国内板'] || 0) - (不良['国内板'] || 0);
-            const qQi = (产量['砌块'] || 0) - (修补['砌块'] || 0) - (不良['砌块'] || 0);
+            const qDomestic = (下线量['国内板'] || 0) - (修补['国内板'] || 0) - (不良['国内板'] || 0);
+            const qQi = (下线量['砌块'] || 0) - (修补['砌块'] || 0) - (不良['砌块'] || 0);
 
             const MP = monthName ? getMonthParams(monthName) : params;
             const convertExport = MP.convertExport ?? 5;
@@ -7988,7 +8070,8 @@
         // 可入库总产量 = 合计产量 − 合计不良（即各产品 产量×(1−不良率) 之和）
         function calcWarehouseTotal(get) {
             // v1.30.221：逐规格 safeGood，保证任一规格不良异常时合计可入库仍 ≤ 合计分拣量
-            return MONTHLY_COLS.reduce((s, col) => s + safeGood(get('产量', col), get('不良', col)), 0);
+            // v1.30.340：基数——外贸用分拣量，国内板/砌块用下线量
+            return MONTHLY_COLS.reduce((s, col) => s + safeGood(get(monthlyBaseRow(col), col), get('不良', col)), 0);
         }
 
         function updateWarehouseTotal() {
@@ -8187,7 +8270,8 @@
                 const 修补 = (monthData?.['修补']?.['50板'] || 0) + (monthData?.['修补']?.['75板'] || 0);
                 return 产量 > 0 ? fmtPct(修补 / 产量 * 100) : '0.00%';
             }
-            const 产量 = monthData?.['产量']?.[col] || 0;
+            // v1.30.340：基数——外贸用分拣量，国内板/砌块用下线量
+            const 产量 = monthData?.[monthlyBaseRow(col)]?.[col] || 0;
             const 修补 = monthData?.['修补']?.[col] || 0;
             return 产量 > 0 ? fmtPct(修补 / 产量 * 100) : '0.00%';
         }
@@ -8198,7 +8282,8 @@
                 const 不良 = (monthData?.['不良']?.['50板'] || 0) + (monthData?.['不良']?.['75板'] || 0);
                 return 产量 > 0 ? fmtPct(不良 / 产量 * 100) : '0.00%';
             }
-            const 产量 = monthData?.['产量']?.[col] || 0;
+            // v1.30.340：基数——外贸用分拣量，国内板/砌块用下线量
+            const 产量 = monthData?.[monthlyBaseRow(col)]?.[col] || 0;
             const 不良 = monthData?.['不良']?.[col] || 0;
             return 产量 > 0 ? fmtPct(不良 / 产量 * 100) : '0.00%';
         }
@@ -8234,7 +8319,7 @@
 
             if (mode === 'monthly') {
                 title.textContent = '批量编辑：月度下线量/分拣量/合格/修补';
-                hint.innerHTML = '格式：4 行 × 4 列，对应 <b>下线量 / 分拣量 / 合格 / 修补</b> × 50板/75板/国内板/砌块<br><b style="color:#3a7d5a;">不良 = 分拣量 − 合格 − 修补 自动计算，无需录入。下线量为外部数据，仅在此处导入，不参与公式计算。50板、75板的分拣量由「每日产量质量」模块自动带入；若历史月份无外贸明细，可直接在此粘贴导入，导入值优先于自动带入。</b><br><span style="color:#888;">兼容：粘贴 3 行时按旧格式（分拣量 / 合格 / 修补）导入，下线量不变。</span>';
+                hint.innerHTML = '格式：4 行 × 4 列，对应 <b>下线量 / 分拣量 / 合格 / 修补</b> × 50板/75板/国内板/砌块<br><b style="color:#3a7d5a;">不良 = 基数 − 合格 − 修补 自动计算，无需录入。50板、75板的分拣量由「每日产量质量」模块自动带入；若历史月份无外贸明细，可直接在此粘贴导入，导入值优先于自动带入。<b style="color:#9a5b00;">国内板、砌块没有「分拣量」概念：它们的下线量（= 在「每日产量质量」里录入的产量）才是产量基数，参与合格率/修补率/质量扣款计算；这两列的分拣量固定显示 "-"、导入时会被忽略。</b></b><br><span style="color:#888;">兼容：粘贴 3 行时按旧格式（分拣量 / 合格 / 修补）导入，下线量不变。</span>';
                 textarea.value = getMonthlyBatchText();
                 yieldConfig.style.display = 'none';
                 deductionConfig.style.display = 'none';
@@ -8529,7 +8614,10 @@
             // 兼容旧数据
             if (!record.data.deptDeduction) record.data.deptDeduction = {};
             if (!record.laborCost) record.laborCost = createEmptyLaborCost();
-            MONTHLY_ROWS.forEach(row => {
+            // v1.30.340：「下线量」必须最后处理——国内板/砌块的下线量派生自「产量(分拣量)」行，
+            //   若先处理下线量会读到尚未更新的旧分拣量。
+            const _saveRowOrder = ['产量', '合格', '修补', '不良', '下线量'];
+            _saveRowOrder.forEach(row => {
                 MONTHLY_COLS.forEach(col => {
                     const el = document.getElementById(`cur-${row}-${col}`);
                     // v1.30.337：输入框不存在（当前不在「月度数据」页——如 App 更新后 Service Worker
@@ -8577,7 +8665,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.339';
+        const APP_VERSION = 'v1.30.340';
 
         function forceRefresh() {
             if ('caches' in window) {
@@ -9820,13 +9908,19 @@
             out['下线量'] = {};
             MONTHLY_COLS.forEach(col => {
                 if ((col === '50板' || col === '75板') && hasOfflineSpec(monthName, col)) return;
+                // v1.30.340：国内板/砌块 有每日明细时，下线量=每日记录产量（自动带入）→ 不是手动字段
+                if (isDomesticCol(col) && hasDomesticSpec(monthName, col)) return;
                 if (d['下线量'] && d['下线量'][col] !== undefined) out['下线量'][col] = d['下线量'][col];
             });
             // 产量质量：非「自动导入」列才算手动（50板/75板 有外贸明细、国内板/砌块 有每日明细 → 自动）
             const manualCols = MONTHLY_COLS.filter(c => !isMonthlyAutoColAny(c, monthName));
             ['产量', '合格', '修补', '不良'].forEach(row => {
                 const o = {};
-                manualCols.forEach(c => { if (d[row] && d[row][c] !== undefined) o[c] = d[row][c]; });
+                manualCols.forEach(c => {
+                    // v1.30.340：国内板/砌块没有分拣量（产量行）→ 永远不是手动字段
+                    if (row === '产量' && isDomesticCol(c)) return;
+                    if (d[row] && d[row][c] !== undefined) o[c] = d[row][c];
+                });
                 out[row] = o;
             });
             if (rec && rec.laborCost) out.laborCost = Object.assign({}, rec.laborCost);
@@ -9900,6 +9994,8 @@
                                     // 下线量（外部导入）：50板/75板 若有每日下线产量明细 → 自动导入，不在手动合并里复活
                                     MONTHLY_COLS.forEach(col => {
                                         if ((col === '50板' || col === '75板') && hasOfflineSpec(m.name, col)) return;
+                                        // v1.30.340：国内板/砌块 有每日明细时下线量为自动带入值 → 不参与手动合并
+                                        if (isDomesticCol(col) && hasDomesticSpec(m.name, col)) return;
                                         const mv = _mergeManualScalar(
                                             lf['下线量'] ? lf['下线量'][col] : undefined,
                                             cf['下线量'] ? cf['下线量'][col] : undefined,
@@ -9912,6 +10008,8 @@
                                     ['产量', '合格', '修补', '不良'].forEach(row => {
                                         MONTHLY_COLS.forEach(col => {
                                             if (isYieldLinkedCol(col)) return;
+                                            // v1.30.340：国内板/砌块没有分拣量（产量行）→ 不参与手动合并
+                                            if (row === '产量' && isDomesticCol(col)) return;
                                             const mv = _mergeManualScalar(
                                                 lf[row] ? lf[row][col] : undefined,
                                                 cf[row] ? cf[row][col] : undefined,
@@ -9920,6 +10018,17 @@
                                             if (!cm2.data[row]) cm2.data[row] = {};
                                             cm2.data[row][col] = mv;
                                         });
+                                    });
+                                    // v1.30.340：合并后按「每日明细」重算国内板/砌块的下线量，保持云端载荷自洽
+                                    ['国内板', '砌块'].forEach(col => {
+                                        const yk2 = findYieldMonthKey(m.name);
+                                        const dr = (yk2 && yieldData.months[yk2] && yieldData.months[yk2].domesticRecords) || [];
+                                        const f = dr.filter(r => r.spec === col);
+                                        if (f.length === 0) return;
+                                        if (!cm2.data['下线量']) cm2.data['下线量'] = {};
+                                        cm2.data['下线量'][col] = Math.round(f.reduce((s2, r) => s2 + (parseFloat(r.yieldQty) || 0), 0) * 10) / 10;
+                                        if (!cm2.data['产量']) cm2.data['产量'] = {};
+                                        cm2.data['产量'][col] = 0;
                                     });
                                     // 人工成本手动值
                                     if (lf.laborCost) {
@@ -10554,6 +10663,10 @@
             initOrders();
             // 数据自愈：把月份统一归为「年+月」长格式（2026年9月），再进入联动初始化
             normalizeMonthlyMonths();
+            // v1.30.340：回填历史月份——国内板/砌块 旧「分拣量」迁移到「下线量」（它们没有分拣量概念）
+            try {
+                if (migrateDomesticOfflineBase()) saveMonthly();
+            } catch (e) {}
             // 同步迁移「分析月份 / 经营成果本表月份」选择数组里的短名为长名，避免重命名后相关表失配
             migrateMonthSelections();
             // v1.30.242 一次性迁移：「经营成果」表的月份自本版本起由「本表月份」独立控制，
