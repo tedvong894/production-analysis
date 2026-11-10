@@ -2450,7 +2450,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.341</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.342</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -8675,7 +8675,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.341';
+        const APP_VERSION = 'v1.30.342';
 
         function forceRefresh() {
             if ('caches' in window) {
@@ -9146,13 +9146,39 @@
             }
         }
 
+        // v1.30.342 启动保护：自动 reload 的全局硬守卫。
+        // iOS Safari 会从 HTTP 缓存取回旧版 index.html（Pages max-age=600），与新版交错时
+        // APP_VERSION 来回翻转 → 版本检查 / SW 接管 两处 reload 互相触发 → 无限刷新「卡死进不去」。
+        // 8 秒窗口内最多允许 2 次自动刷新；超限即停，页面照常可用（不再阻断用户进 app）。
+        function _safeReload(reason) {
+            try {
+                var k = 'pa_reload_guard';
+                var now = Date.now();
+                var arr = [];
+                try { arr = JSON.parse(sessionStorage.getItem(k) || '[]'); } catch (e) { arr = []; }
+                if (!Array.isArray(arr)) arr = [];
+                arr = arr.filter(function (t) { return (now - t) < 8000; });
+                if (arr.length >= 2) {
+                    try { console.warn('[启动保护] 已阻止重复自动刷新: ' + reason); } catch (e) {}
+                    try { showToast('已停止重复自动刷新，页面可正常使用。若显示旧版，请点底部「强制刷新」。'); } catch (e) {}
+                    return false;
+                }
+                arr.push(now);
+                try { sessionStorage.setItem(k, JSON.stringify(arr)); } catch (e) {}
+            } catch (e) {}
+            try { location.reload(); } catch (e) { try { location.reload(true); } catch (e2) {} }
+            return true;
+        }
+
         function checkVersion() {
-            const savedVer = localStorage.getItem('app_version');
+            // iOS 上 localStorage 可能因配额/隐私模式抛异常，绝不能让它中断 bootApp
+            var savedVer = null;
+            try { savedVer = localStorage.getItem('app_version'); } catch (e) {}
             // 先写入当前版本号，避免版本不符时陷入「不一致→重载→仍不一致」的无限重载死循环
-            localStorage.setItem('app_version', APP_VERSION);
+            try { localStorage.setItem('app_version', APP_VERSION); } catch (e) {}
             if (savedVer && savedVer !== APP_VERSION) {
-                // 版本变化，强制刷新一次以加载新代码（此时 app_version 已更新，重载后不会再触发）
-                try { location.reload(true); } catch (e) { location.reload(); }
+                // 版本变化，刷新一次以加载新代码（受 _safeReload 守卫限制，不会震荡）
+                _safeReload('version:' + savedVer + '->' + APP_VERSION);
                 return;
             }
         }
@@ -9192,19 +9218,13 @@
 
         // ============ PWA ============
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(function (reg) {
-                if (reg && reg.installing) {
-                    reg.installing.addEventListener('statechange', function () {
-                        if (reg.installing.state === 'installed' && navigator.serviceWorker.controller) {
-                            location.reload(true);
-                        }
-                    });
-                }
-            }).catch(function () {});
-            // 新 Service Worker 接管页面时，立即刷新以加载最新 HTML
+            navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(function () {});
+            // 新 Service Worker 接管页面时刷新以加载最新 HTML。
+            // v1.30.342：原 reg.installing.statechange 里还有一条 reload，与此处重复触发，iOS 上叠加成刷新循环 → 已删除。
+            // 两处自动刷新统一走 _safeReload 守卫；sw.js 对导航请求用 no-store，保证刷到的一定是最新 HTML。
             var _reloaded = false;
             navigator.serviceWorker.addEventListener('controllerchange', function () {
-                if (!_reloaded) { _reloaded = true; location.reload(true); }
+                if (!_reloaded) { _reloaded = true; _safeReload('controllerchange'); }
             });
         }
 
@@ -10698,9 +10718,10 @@
             syncMonthSelectors();
             checkVersion();
             // 联网同步：安装写钩子并按配置拉起（云端为权威 + 本地编辑即推送）
-            initSync();
+            // v1.30.342：iOS 上大 payload / localStorage 异常不得拖垮整个启动流程
+            try { initSync(); } catch (e) { try { console.warn('[启动] 联网同步初始化失败', e); } catch (e2) {} }
             // v1.30.314：每月自动备份快照（离线/本地模式启动兜底；联网设备由首拉成功后强制刷新当月快照）
-            maybeAutoBackup();
+            try { maybeAutoBackup(); } catch (e) { try { console.warn('[启动] 自动备份失败', e); } catch (e2) {} }
             // v1.30.318：本机月份数据损坏自检——若启动时一个有效月份都没有（如本机存储被清空/损坏、
             // 或上次只拉到畸形数据），已登录则立即从云端拉取恢复；未登录则明确提示去登录，
             // 杜绝界面卡在「null」空壳让用户以为数据全丢。
