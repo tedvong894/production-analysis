@@ -2450,7 +2450,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.340</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.341</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -7134,9 +7134,33 @@
         }
 
         // ===== 指标2：阶段比较（行=上旬/中旬/下旬，仅显示已有数据的阶段） =====
-        // 说明：① 每日明细仅含外贸规格（50板/75板）；② 黄色修正数据条（同日第3条起）计入本表（v1.30.274）；
+        // 说明：① 外贸每日明细仅含 50板/75板；国内板/砌块取自 domesticRecords；② 黄色修正数据条（同日第3条起）计入本表（v1.30.274）；
         //       ③ 无数据的阶段（如下旬未到/未录）整行不出现，录入后自动出现；
-        //       ④ v1.30.303：可入库总方量(方)=国内板/砌块，三旬均为手动输入（存 yieldData.months[yk].phaseTotals）；外贸占比=外贸可入库/可入库总方量（各阶段独立）。
+        //       ④ v1.30.341：「可入库总方量(方)」不再手输，改为按旬自动汇总 4 规格 (产量基数 − 不良)，口径与月度数据表一致；
+        //          外贸占比 = 该旬外贸可入库 / 该旬可入库总方量（各阶段独立）。
+        // 阶段口径：上旬=1-10日 / 中旬=11-20日 / 下旬=21-月底（manalysisPhaseOf）
+        // 某月「国内板/砌块」每日明细（每日记录里的 yieldQty = 下线量 = 产量基数）
+        function getManalysisDomesticRecords(monthName) {
+            if (!monthName) return [];
+            const yk = findYieldMonthKey(monthName);
+            return ((yk && yieldData.months[yk] && yieldData.months[yk].domesticRecords) || [])
+                .filter(r => r && (r.spec === '国内板' || r.spec === '砌块'));
+        }
+        // 某旬「可入库总方量」= 外贸50/75板(分拣量−不良) + 国内板/砌块(下线量−不良)
+        // 与月度数据表 getMonthTotalWarehouse / monthlyBaseQty 口径一致，只是按旬切片；
+        // 各路先汇总再走 safeGood，和阶段表「外贸可入库产量」的合并算法保持同口径。
+        function manalysisPhaseWarehouse(foreignRecs, domesticRecs) {
+            let fY = 0, fD = 0, dY = 0, dD = 0;
+            (foreignRecs || []).forEach(r => {
+                fY += parseFloat(r.yieldQty) || 0;
+                fD += parseFloat(r.defect) || 0;
+            });
+            (domesticRecs || []).forEach(r => {
+                dY += parseFloat(r.yieldQty) || 0;   // 国内板/砌块：每日「产量」即下线量
+                dD += parseFloat(r.defect) || 0;
+            });
+            return safeGood(fY, fD) + safeGood(dY, dD);
+        }
         function renderPhaseComparison() {
             const tEl = document.getElementById('manalysis-phase-table');
             if (!tEl) return;
@@ -7145,73 +7169,59 @@
             const emptyTip = monthName
                 ? '「' + monthName + '」暂无每日明细数据，请先到「每日产量质量」模块录入。'
                 : '暂无月份数据。';
-            if (allRecs.length === 0) {
+            const domAll = getManalysisDomesticRecords(monthName);
+            if (allRecs.length === 0 && domAll.length === 0) {
                 tEl.innerHTML = '<div class="analysis-empty">' + emptyTip + '</div>';
                 return;
             }
-            // 国内板/砌块 各旬可入库总方量：手动输入（存于 yieldData.months[yk].phaseTotals，未录入=null）
-            const ykPT = findYieldMonthKey(monthName);
-            const phaseTotals = (ykPT && yieldData.months[ykPT] && yieldData.months[ykPT].phaseTotals) || {};
-            const domestic = [0, 1, 2].map(i => {
-                const v = parseFloat(phaseTotals[String(i)]);
-                return isNaN(v) ? null : v;
-            });
             const phaseRecs = [[], [], []];
             allRecs.forEach(r => phaseRecs[manalysisPhaseOf(r.date)].push(r));
+            const domPhaseRecs = [[], [], []];
+            domAll.forEach(r => domPhaseRecs[manalysisPhaseOf(r.date)].push(r));
             const rows = [];
             phaseRecs.forEach((prs, i) => {
-                if (prs.length === 0) return; // 该阶段尚无数据 → 不出现
+                if (prs.length === 0 && domPhaseRecs[i].length === 0) return; // 该阶段 4 类规格均无数据 → 不出现
                 const s = manalysisSum(prs, null);
                 const warehouse = safeGood(s.产量, s.不良); // 与经营分析 getMonthYieldStats 同口径（合并后 safeGood）
                 // 外贸分拣量 = 外贸可入库产量 / (1-不良率)；不良率≥100% 时分母≤0 → 显示 —
                 const dRate = s.产量 > 0 ? s.不良 / s.产量 : 0;
-                const total = (domestic[i] === null) ? null : domestic[i]; // 可入库总方量=国内板/砌块 本阶段（由月度表各旬累计差分，只读）
+                const total = manalysisPhaseWarehouse(prs, domPhaseRecs[i]); // 可入库总方量=本旬 4 规格 (基数−不良) 自动汇总（只读）
                 rows.push({
                     i,
                     label: shortLabel + MANALYSIS_PHASE_NAMES[i],
                     sortQty: (1 - dRate) > 0 ? warehouse / (1 - dRate) : null,
                     warehouse,
                     total,
-                    // 外贸占比 = 外贸可入库方量 / 可入库总方量（手输值），各阶段独立
-                    ratio: (total !== null && total > 0) ? warehouse / total * 100 : null,
+                    // 外贸占比 = 本旬外贸可入库 / 本旬可入库总方量，各阶段独立
+                    ratio: total > 0 ? warehouse / total * 100 : null,
                     qual: s.产量 > 0 ? (s.合格 || 0) / s.产量 * 100 : 0,
                     repairRate: s.产量 > 0 ? s.修补 / s.产量 * 100 : 0,
                     defectRate: s.产量 > 0 ? s.不良 / s.产量 * 100 : 0
                 });
             });
-            let h = '<div class="table-scroll"><table class="analysis-table center"><thead><tr><th>阶段</th><th style="width:120px;" title="手动输入该旬国内板/砌块可入库总方量">可入库总方量(方)</th><th>外贸分拣量(方)</th><th>外贸可入库产量(方)</th><th>外贸占比(%)</th><th>合格率(%)</th><th>修补率(%)</th><th>不良率(%)</th></tr></thead><tbody>';
+            let h = '<div class="table-scroll"><table class="analysis-table center"><thead><tr><th>阶段</th><th style="width:120px;" title="按旬自动汇总（只读）：50板/75板=分拣量−不良，国内板/砌块=下线量−不良">可入库总方量(方)</th><th>外贸分拣量(方)</th><th>外贸可入库产量(方)</th><th>外贸占比(%)</th><th>合格率(%)</th><th>修补率(%)</th><th>不良率(%)</th></tr></thead><tbody>';
             rows.forEach(r0 => {
-                // 可入库总方量：三旬均手动输入（清空=未录入，外贸占比显示 —）
-                const totalCell = `<input type="number" class="monthly-input phase-total-input" min="0" step="0.1" value="${r0.total === null ? '' : fmtNum(r0.total)}" onchange="onPhaseTotalEdit(${r0.i}, this.value)" title="手动输入该旬国内板/砌块可入库总方量">`;
+                // 可入库总方量：按旬自动汇总，只读
+                const totalCell = fmtNum(r0.total);
                 h += `<tr><td>${r0.label}</td>`
                     + `<td>${totalCell}</td>`
                     + `<td>${r0.sortQty === null ? '—' : fmtNum(r0.sortQty)}</td><td>${fmtNum(r0.warehouse)}</td>`
                     + `<td class="right" id="phase-ratio-${r0.i}">${r0.ratio === null ? '—' : fmtPct(r0.ratio)}</td>`
                     + `<td>${fmtPct(r0.qual)}</td><td>${fmtPct(r0.repairRate)}</td><td>${fmtPct(r0.defectRate)}</td></tr>`;
             });
-            // 合计行：国内板/砌块=三旬手动值之和；外贸占比=外贸可入库/可入库总方量（各阶段独立，合计=外贸合计/手动合计）
+            // 合计行：可入库总方量=全月 4 规格自动汇总；外贸占比=外贸可入库合计/可入库总方量
             const tSum = manalysisSum(allRecs, null);
             const tWh = safeGood(tSum.产量, tSum.不良);
             const tDRate = tSum.产量 > 0 ? tSum.不良 / tSum.产量 : 0;
             const tSort = (1 - tDRate) > 0 ? tWh / (1 - tDRate) : null;
-            const tTotal = domestic.reduce((a, b) => a + (b === null ? 0 : b), 0);
+            const tTotal = manalysisPhaseWarehouse(allRecs, domAll);
             h += `<tr class="analysis-total"><td>合计</td><td id="phase-total-sum">${fmtNum(tTotal)}</td><td>${tSort === null ? '—' : fmtNum(tSort)}</td><td>${fmtNum(tWh)}</td><td id="phase-ratio-sum">${tTotal > 0 ? fmtPct(tWh / tTotal * 100) : '—'}</td><td>${fmtPct(tSum.产量 > 0 ? (tSum.合格 || 0) / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.修补 / tSum.产量 * 100 : 0)}</td><td>${fmtPct(tSum.产量 > 0 ? tSum.不良 / tSum.产量 * 100 : 0)}</td></tr>`;
             h += '</tbody></table></div>';
             tEl.innerHTML = h;
         }
 
-        // 阶段比较「可入库总方量」手动输入：存 yieldData.months[yk].phaseTotals['0'/'1'/'2']（清空=删除）
-        function onPhaseTotalEdit(i, val) {
-            const { monthName } = getManalysisRecords();
-            const yk = findYieldMonthKey(monthName);
-            if (!yk || !yieldData.months[yk]) return;
-            if (!yieldData.months[yk].phaseTotals) yieldData.months[yk].phaseTotals = {};
-            const t = String(val).trim();
-            if (t === '' || isNaN(parseFloat(t))) delete yieldData.months[yk].phaseTotals[String(i)];
-            else yieldData.months[yk].phaseTotals[String(i)] = Math.round(parseFloat(t) * 10) / 10;
-            saveYield();
-            renderPhaseComparison();
-        }
+        // v1.30.341：阶段比较「可入库总方量」已改自动取数，原手输入口 onPhaseTotalEdit 移除；
+        // 旧数据里的 yieldData.months[yk].phaseTotals 不再读取（保留不影响兼容）。
 
         // ============ 简要分析（可折叠 / 可编辑） ============
         const BA_COCKPIT_KEY = 'brief_analysis_cockpit';
@@ -8665,7 +8675,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.340';
+        const APP_VERSION = 'v1.30.341';
 
         function forceRefresh() {
             if ('caches' in window) {
