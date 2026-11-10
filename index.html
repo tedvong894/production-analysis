@@ -2450,7 +2450,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.342</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.343</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -8675,7 +8675,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.342';
+        const APP_VERSION = 'v1.30.343';
 
         function forceRefresh() {
             if ('caches' in window) {
@@ -9245,7 +9245,9 @@
         let _lsQuotaWarned = false, _lsLastErr = '';
         function lsSet(key, val) {
             try {
-                localStorage.setItem(key, val);
+                // v1.30.343：必须走原生 setItem。installSyncWriteHook 会包装 localStorage.setItem
+                // 并吞掉 QuotaExceededError（为保护业务保存链路），否则本函数的配额检测被架空 → 静默丢数据。
+                Storage.prototype.setItem.call(localStorage, key, val);
                 return true;
             } catch (e) {
                 const quota = !!(e && (e.name === 'QuotaExceededError' || e.code === 22 ||
@@ -9346,8 +9348,20 @@
                 if (!nested && v.length <= AUTO_BACKUP_MAX_CHARS) return false;
                 const flat = capAutoBackupStore(parsed);
                 const txt = JSON.stringify(flat);
-                if (txt.length <= AUTO_BACKUP_MAX_CHARS) lsSet(AUTO_BACKUP_KEY, txt);
-                else { try { localStorage.removeItem(AUTO_BACKUP_KEY); } catch (e) {} }
+                if (txt.length <= AUTO_BACKUP_MAX_CHARS) {
+                    // v1.30.343：配额已满时瘦身也写不回去 → 直接删掉派生快照，先把空间腾出来
+                    if (!lsSet(AUTO_BACKUP_KEY, txt)) { try { localStorage.removeItem(AUTO_BACKUP_KEY); } catch (e) {} }
+                } else { try { localStorage.removeItem(AUTO_BACKUP_KEY); } catch (e) {} }
+                return true;
+            } catch (e) { return false; }
+        }
+        // v1.30.343 启动自愈：占用逼近配额时主动丢弃自动备份快照。
+        // 快照只是「一键回滚」的派生数据，删掉不丢任何业务数据；会话/业务键才有优先级。
+        function ensureStorageHeadroom() {
+            try {
+                const used = lsUsedChars();
+                if (used < LS_QUOTA_CHARS * 0.85) return false;
+                try { localStorage.removeItem(AUTO_BACKUP_KEY); } catch (e) {}
                 return true;
             } catch (e) { return false; }
         }
@@ -9485,9 +9499,27 @@
             let map = (obj.data && typeof obj.data === 'object') ? obj.data : obj;
             const keys = Object.keys(map).filter(k => BACKUP_KEYS.indexOf(k) >= 0);
             if (keys.length === 0) throw new Error('备份中未找到任何本应用数据');
-            keys.forEach(k => lsSet(k, JSON.stringify(map[k])));   // v1.30.331：走安全写入（配额不足会明确提示，不再静默失败）
+            // v1.30.343：备份文件里常带着历史膨胀的自动备份快照（MB 级）。原样写回会瞬间撑爆配额，
+            //   后续会话/业务键全部写不进去 → iOS 上表现为「反复要登录 + 只剩 7 月」。
+            //   顺序：① 先删旧快照释放空间 ② 先写 6 个业务键 ③ 快照瘦身+限额后再写，超限直接丢弃。
+            try { localStorage.removeItem(AUTO_BACKUP_KEY); } catch (e) {}
+            let written = 0, backupStore = null;
+            keys.forEach(k => {
+                if (k === AUTO_BACKUP_KEY) { backupStore = map[k]; return; }
+                if (lsSet(k, JSON.stringify(map[k]))) written++;
+            });
+            if (backupStore !== null) {
+                try {
+                    const flat = capAutoBackupStore(backupStore);
+                    const txt = JSON.stringify(flat);
+                    if (Object.keys(flat).length && txt.length <= AUTO_BACKUP_MAX_CHARS) lsSet(AUTO_BACKUP_KEY, txt);
+                } catch (e) {}
+            }
             reloadAllData();
-            return keys.length;
+            // v1.30.343：导入是本机独有改动，必须跨刷新保留「待上传」，
+            //   否则重新登录首拉时 _dirty=false → 被云端旧数据覆盖（用户看到「只剩 7 月」）。
+            try { _dirty = true; _markPending(); } catch (e) {}
+            return written;
         }
 
         function doImportFile(input) {
@@ -9697,19 +9729,25 @@
             return out;
         }
         function applyPayloadToLocal(payload) {
-            if (!payload || typeof payload !== 'object') return;
+            if (!payload || typeof payload !== 'object') return true;
+            // v1.30.343：返回「是否全部写入成功」，供 pullState 判断是否允许采纳云端数据。
+            let allOk = true;
             // v1.30.331：先写「瘦身后的自动备份」——它替换掉旧的膨胀版本、立刻释放被占满的配额，
             //   后面 6 个业务数据键才写得进去。
             //   （旧逻辑先写数据键、配额异常被静默吞掉 → 本机数据空 → 页面全 0 +「无有效月份」警告）
             if (payload[AUTO_BACKUP_KEY] !== undefined) {
                 const flat = capAutoBackupStore(payload[AUTO_BACKUP_KEY]);
                 const txt = JSON.stringify(flat);
-                if (Object.keys(flat).length && txt.length <= AUTO_BACKUP_MAX_CHARS) lsSet(AUTO_BACKUP_KEY, txt);
-                else { try { localStorage.removeItem(AUTO_BACKUP_KEY); } catch (e) {} }
+                if (Object.keys(flat).length && txt.length <= AUTO_BACKUP_MAX_CHARS) {
+                    if (!lsSet(AUTO_BACKUP_KEY, txt)) allOk = false;
+                } else { try { localStorage.removeItem(AUTO_BACKUP_KEY); } catch (e) {} }
             }
             DATA_KEYS.forEach(k => {
-                if (payload[k] !== undefined) lsSet(k, JSON.stringify(payload[k]));
+                if (payload[k] !== undefined) {
+                    if (!lsSet(k, JSON.stringify(payload[k]))) allOk = false;
+                }
             });
+            return allOk;
         }
         function payloadHasData(payload) {
             if (!payload || typeof payload !== 'object') return false;
@@ -10247,7 +10285,14 @@
                     const reshaped = JSON.stringify(prunedAdopted) !== JSON.stringify(adopted);
                     adopted = prunedAdopted;
                     _suppressDirty = true;
-                    try { applyPayloadToLocal(adopted); rebuildFromStorage(); } finally { _suppressDirty = false; }
+                    let appliedOk = true;
+                    try { appliedOk = applyPayloadToLocal(adopted); if (appliedOk) rebuildFromStorage(); } finally { _suppressDirty = false; }
+                    // v1.30.343：本机存储写不进去时绝不采纳云端（否则会用残缺数据覆盖本机且无提示）
+                    if (!appliedOk) {
+                        setSync('本机存储已满·已保留原数据', 'err');
+                        try { showToast('⚠️ 本机存储空间已满，云端数据未能写入；已保留原有数据，请清理历史快照。'); } catch (e) {}
+                        _dirty = true; _markPending(); _syncing = false; return;
+                    }
                     saveBaselineFromPayload(adopted);   // v1.30.312：记录首拉合并后的云端基线，供后续三路合并识别「其他设备已删除」
                     _dirty = false; _lastErr = '';
                     _pulled = true; _lastSyncAt = new Date();
@@ -10554,11 +10599,23 @@
         }
 
         function _setSession(email, board, keyHex) {
-            try {
-                localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify({
-                    email: email, ts: Date.now(), board: board || '', key: keyHex || '', ver: AUTH_VER
-                }));
-            } catch (e) {}
+            // v1.30.343：登录会话必须真的落盘。以前裸 setItem + 静默 catch，配额满时写不进去，
+            //   于是「每次重载都要重新登录」，重新登录又触发云端首拉覆盖本机（只剩 7 月）。
+            const sess = JSON.stringify({
+                email: email, ts: Date.now(), board: board || '', key: keyHex || '', ver: AUTH_VER
+            });
+            const raw = function (k, v) { return Storage.prototype.setItem.call(localStorage, k, v); };
+            let ok = false;
+            try { raw(AUTH_SESSION_KEY, sess); ok = (localStorage.getItem(AUTH_SESSION_KEY) === sess); } catch (e) {}
+            if (!ok) {
+                // 配额满：自动备份快照是唯一可安全丢弃的派生数据，删掉腾空间后重试
+                try { localStorage.removeItem(AUTO_BACKUP_KEY); } catch (e) {}
+                try { raw(AUTH_SESSION_KEY, sess); ok = (localStorage.getItem(AUTH_SESSION_KEY) === sess); } catch (e) {}
+            }
+            if (!ok) {
+                try { showToast('⚠️ 本机存储空间已满，登录状态无法保存。请到「数据 → 数据备份」清理历史快照后重新登录。'); } catch (e) {}
+                try { console.warn('[pa] 登录会话写入失败（本机存储配额/权限异常）'); } catch (e) {}
+            }
         }
 
         function renderAuthMode() {
@@ -10681,6 +10738,8 @@
             // v1.30.331：启动自愈——先瘦身膨胀的自动备份（旧的指数嵌套数据）、释放被占满的
             //   localStorage 配额，再初始化数据；否则本机可能直接读出一份空数据（全 0 + 无有效月份）
             try { healOversizedAutoBackup(); } catch (e) {}
+            // v1.30.343：配额逼近上限时先丢派生快照，保证会话与业务数据有空间可写
+            try { ensureStorageHeadroom(); } catch (e) {}
             initData();
             initParams();
             bindParamAutoSave();
