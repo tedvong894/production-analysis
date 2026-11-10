@@ -1,6 +1,6 @@
 // 生产经营分析系统 - Service Worker
 // 修改此版本号即可强制所有客户端更新缓存
-const CACHE_VERSION = 'v1.30.341';
+const CACHE_VERSION = 'v1.30.342';
 const CACHE_NAME = 'production-analysis-' + CACHE_VERSION;
 
 const urlsToCache = [
@@ -45,8 +45,12 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(fetch(req));
     return;
   }
+  // v1.30.342：导航（HTML）请求强制绕过 HTTP 缓存。
+  // iOS Safari 会把 Pages 的 max-age=600 旧 index.html 从 HTTP 缓存取回，
+  // 与新版 APP_VERSION 交错 → 刷新震荡。仅对导航请求用 no-store，静态资源仍走默认缓存策略。
+  const isNav = req.mode === 'navigate' || (req.headers.get('accept') || '').indexOf('text/html') >= 0;
   event.respondWith(
-    fetch(req)
+    fetch(req, isNav ? { cache: 'no-store' } : undefined)
       .then((networkResponse) => {
         // 网络请求成功，更新缓存
         if (networkResponse && networkResponse.status === 200) {
