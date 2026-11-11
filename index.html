@@ -739,7 +739,7 @@
             display: flex; flex-direction: column;
             min-height: 0;
         }
-        /* 每日产量质量：月份选择 + 新建月份按钮，去掉卡片背景，按钮右对齐 */
+        /* 月度产量质量：月份选择 + 新建月份按钮，去掉卡片背景，按钮右对齐 */
         .yield-header-bar {
             display: flex; justify-content: space-between; align-items: center;
             gap: 8px; margin-bottom: 8px;
@@ -1053,7 +1053,7 @@
         #page-wage table td { text-align: center; }
         #page-wage table td input[type="number"].param-table-input { text-align: center !important; }
         #page-wage table td input[type="number"].labor-amount-input { text-align: center; }
-        /* 由每日产量质量模块自动带入的只读输入框 */
+        /* 由月度产量质量模块自动带入的只读输入框 */
         input[type="number"].linked-input {
             background: #f0f6f2 !important;
             color: #3a7d5a !important;
@@ -1307,7 +1307,7 @@
             .tab-item { padding: 7px 2px 9px; font-size: 11px; }
             .tab-item .tab-icon { font-size: 20px; }
 
-            /* ===== v1.30.254：月度数据 / 每日产量质量 竖屏专属修复 =====
+            /* ===== v1.30.254：月度数据 / 月度产量质量 竖屏专属修复 =====
                根因：这两页是唯一没有横向滚动容器的模块（驾驶舱/经营成果/订单均有
                .table-scroll 或 overflow-x:auto），且卡片头在窄屏不换行 → 竖屏才崩。 */
 
@@ -1564,7 +1564,7 @@
         <div id="history-months-section" data-page-node-id="pWMzTxd9VxXPkhJczfeAb2"></div>
     </div>
 
-    <!-- 每日产量质量页 -->
+    <!-- 月度产量质量页 -->
     <div class="page" id="page-yield" data-page-node-id="7nrvuBBu8GtdYAczn4N7tc">
         <!-- 月份选择 / 新建月份：去掉空白卡片，按钮直接右对齐 -->
         <div class="yield-header-bar" data-page-node-id="pKNT8oouHa2MkqkcQyW7LE">
@@ -1744,7 +1744,7 @@
                 <div id="offline-daily-body" style="padding:10px 12px;"></div>
             </div>
         </div>
-        <!-- 国内板/砌块 每日产量质量（v1.30.338）：每日录入，自动导入月度数据表格，参与质量扣款计算 -->
+        <!-- 国内板/砌块 月度产量质量（v1.30.338）：每日录入，自动导入月度数据表格，参与质量扣款计算 -->
         <div class="card" style="margin-top:14px;">
             <div class="card-header compact card-header-light">
                 <button class="btn btn-save" style="font-size:13px; padding:5px 14px;" onclick="addDomesticBatch()">+ 录入</button>
@@ -2382,7 +2382,7 @@
 
         <!-- 指标1：产量质量 -->
         <div class="analysis-card" data-page-node-id="AnZ1">
-            <div class="analysis-card-title"><span class="idx">1</span>每日产量质量</div>
+            <div class="analysis-card-title"><span class="idx">1</span>月度产量质量</div>
             <div id="analysis-yield-table"></div>
         </div>
 
@@ -2431,11 +2431,11 @@
 
         <!-- 指标1：每日明细趋势图（外贸每日明细组合图，忽略黄色修正数据条） -->
         <div class="analysis-card">
-            <div class="analysis-card-title"><span class="idx">1</span>每日产量质量-每日明细趋势图</div>
+            <div class="analysis-card-title"><span class="idx">1</span>月度产量质量-每日明细趋势图</div>
             <div id="manalysis-yield-chart"></div>
         </div>
 
-        <!-- 指标2：团队表现 · 扣款占比趋势（v1.30.285：数据=每日产量质量·工段质量扣款每日明细；线=各工段每日占比，柱=当日扣款合计） -->
+        <!-- 指标2：团队表现 · 扣款占比趋势（v1.30.285：数据=月度产量质量·工段质量扣款每日明细；线=各工段每日占比，柱=当日扣款合计） -->
         <div class="analysis-card">
             <div class="analysis-card-title"><span class="idx">2</span>团队表现 · 累计扣款占比趋势</div>
             <div id="manalysis-team-chart"></div>
@@ -2450,7 +2450,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.343</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.344</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -2478,7 +2478,7 @@
         </div>
         <div class="tab-item" data-tab="yield" onclick="switchTab('yield')" data-page-node-id="LjFpGaSIHR7YHXsm2sM9HO">
             <span class="tab-icon" data-page-node-id="891RHiltdCK5u2HPTPRJMx">📋</span>
-            每日产量质量
+            月度产量质量
         </div>
         <div class="tab-item" data-tab="order" onclick="switchTab('order')" data-page-node-id="U04orWHSPrPNAISDSUhkto">
             <span class="tab-icon" data-page-node-id="YiuIwcLR9zSg7Faqpy6xHZ">📦</span>
@@ -2519,7 +2519,7 @@
         // v1.30.340：产量基数口径
         //   外贸 50板/75板：基数 = 「分拣量」（数据键 '产量'），下线量只是外部导入的展示数据
         //   国内板/砌块：没有分拣量概念，基数 = 「下线量」（数据键 '下线量'），
-        //     该值由「每日产量质量」模块里录入的国内板/砌块「产量」按月累计而来
+        //     该值由「月度产量质量」模块里录入的国内板/砌块「产量」按月累计而来
         function isDomesticCol(col) { return col === '国内板' || col === '砌块'; }
         function monthlyBaseRow(col) { return isDomesticCol(col) ? '下线量' : '产量'; }
         function monthlyBaseQty(data, col) {
@@ -2557,7 +2557,7 @@
         function fmtNum(v) { return (Number(v) || 0).toFixed(1); }
         function fmtPct(v) { return (Number(v) || 0).toFixed(2) + '%'; }
         function fmtMoney(v, d) { const n = Number(v) || 0; const dec = (d == null) ? 0 : d; return n.toLocaleString('zh-CN', { minimumFractionDigits: dec, maximumFractionDigits: dec }); }
-        // 每日产量质量「每日明细」数据字段保留4位小数（分数/比率列仍走 fmtPct 保留2位）
+        // 月度产量质量「每日明细」数据字段保留4位小数（分数/比率列仍走 fmtPct 保留2位）
         // 保留原始小数位（最多 4 位），不补尾随 0：1 -> "1"，1.2345 -> "1.2345"
         function fmtNum4(v) {
             const n = Number(v);
@@ -2916,7 +2916,7 @@
             const tabBtn = document.querySelector('.tab-item[data-tab="' + tab + '"]');
             if (tabBtn) tabBtn.classList.add('active');
             const subEl = document.getElementById('page-subtitle');
-            if (subEl) subEl.textContent = ({ cockpit: '元筑ALC生产经营数据面板', profit: '经营利润', wage: '人工成本', order: '订单履约', yield: '每日产量质量', monthly: '月度数据', params: '基础设置', analysis: '经营分析', manalysis: '月度分析' })[tab] || '经营驾驶舱';
+            if (subEl) subEl.textContent = ({ cockpit: '元筑ALC生产经营数据面板', profit: '经营利润', wage: '人工成本', order: '订单履约', yield: '月度产量质量', monthly: '月度数据', params: '基础设置', analysis: '经营分析', manalysis: '月度分析' })[tab] || '经营驾驶舱';
 
             if (tab === 'params') {
                 document.getElementById('page-subtitle').textContent = '基础设置';
@@ -2925,7 +2925,7 @@
                 document.getElementById('page-subtitle').textContent = '月度数据';
                 renderMonthly();
             } else if (tab === 'yield') {
-                document.getElementById('page-subtitle').textContent = '每日产量质量';
+                document.getElementById('page-subtitle').textContent = '月度产量质量';
                 renderYieldQuality();
             } else if (tab === 'order') {
                 document.getElementById('page-subtitle').textContent = '订单履约';
@@ -3094,7 +3094,7 @@
             ensureQualifiedRow(monthRecord);
             const pd = monthRecord.data;
 
-            // 同步每日产量质量模块的 50板/75板 累计数据（同月份）
+            // 同步月度产量质量模块的 50板/75板 累计数据（同月份）
             const yieldSynced = syncYieldToMonthly(monthName);
             const offSynced = syncOfflineToMonthly(monthName);
             const domSynced = syncDomesticToMonthly(monthName);
@@ -3153,7 +3153,7 @@
                             <div class="data-menu" id="monthly-data-menu" style="display:none; right:0; left:auto;">
                                 <button type="button" class="data-menu-item" onclick="monthlyDataMenuAction('entry')"><span class="dm-ico">📝</span>数据录入</button>
                                 <button type="button" class="data-menu-item" onclick="monthlyDataMenuAction('addmonth')"><span class="dm-ico">➕</span>添加新月份</button>
-                                <button type="button" class="data-menu-item" onclick="monthlyDataMenuAction('sync')" title="从「每日产量质量」模块重新带入 50板/75板 最新值（自动带入，只读）"><span class="dm-ico">🔄</span>从外贸同步</button>
+                                <button type="button" class="data-menu-item" onclick="monthlyDataMenuAction('sync')" title="从「月度产量质量」模块重新带入 50板/75板 最新值（自动带入，只读）"><span class="dm-ico">🔄</span>从外贸同步</button>
                             </div>
                         </div>
                     </div>
@@ -3183,7 +3183,7 @@
                                                     const defect = (isMonthlyAutoCol('不良', col, monthName))
                                                         ? Math.round(getMonthlyAutoVal('不良', col, monthName) * 10) / 10
                                                         : Math.round((monthlyBaseQty(pd, col) - (parseFloat(pd['合格']?.[col]) || 0) - (parseFloat(pd['修补']?.[col]) || 0)) * 10) / 10;
-                                                    return `<td class="right"><input type="number" id="cur-不良-${col}" value="${fmtNum(defect)}" class="monthly-input" readonly title="${(isMonthlyAutoCol('不良', col, monthName)) ? '每日产量质量模块自动带入（只读）' : '自动计算：不良 = 分拣量 − 合格 − 修补'}"></td>`;
+                                                    return `<td class="right"><input type="number" id="cur-不良-${col}" value="${fmtNum(defect)}" class="monthly-input" readonly title="${(isMonthlyAutoCol('不良', col, monthName)) ? '月度产量质量模块自动带入（只读）' : '自动计算：不良 = 分拣量 − 合格 − 修补'}"></td>`;
                                                 }
                                                 // 下线量为外部导入数据，不参与外贸联动
                                                 const linked = isMonthlyAutoCol(row, col, monthName);
@@ -3194,7 +3194,7 @@
                                                 // v1.30.340：国内板/砌块 的下线量是「= 分拣量」的派生值，提示语单独说明
                                                 const linkedTitle = (row === '下线量' && (col === '国内板' || col === '砌块'))
                                                     ? '国内板/砌块：无独立下线计量口径，下线量 = 分拣量（自动）'
-                                                    : '每日产量质量模块自动带入（只读）';
+                                                    : '月度产量质量模块自动带入（只读）';
                                                 return `
                                                 <td class="right">
                                                     ${linked
@@ -3328,7 +3328,7 @@
             if (c) c.classList.toggle('collapsed', window.profitHistoryCollapsed);
             if (t) t.classList.toggle('collapsed', window.profitHistoryCollapsed);
         }
-        // v1.30.332：每日产量质量 / 订单履约 历史数据表 折叠（复用 collapse-toggle 样式与逻辑）
+        // v1.30.332：月度产量质量 / 订单履约 历史数据表 折叠（复用 collapse-toggle 样式与逻辑）
         function toggleYieldHistory() {
             window.yieldHistoryCollapsed = !window.yieldHistoryCollapsed;
             const c = document.getElementById('yield-history-content');
@@ -3497,7 +3497,7 @@
         }
 
         // ============ 人工成本 ============
-        // ============ 每日产量质量 ============
+        // ============ 月度产量质量 ============
         function toggleYieldDetail() {
             const content = document.getElementById('yield-detail-content');
             const toggle = document.getElementById('yield-detail-toggle');
@@ -3706,7 +3706,7 @@
 
         // 点击「由产量质量模块自动带入」的只读格时给出提示
         function showYieldLinkTip() {
-            showToast('50板/75板 由「每日产量质量」模块自动带入，请到该模块修改');
+            showToast('50板/75板 由「月度产量质量」模块自动带入，请到该模块修改');
         }
 
         function saveYieldData() {
@@ -3729,9 +3729,9 @@
             return uniqueDays.size;
         }
 
-        // 按月份 + 规格，从「每日产量质量」模块取累计数据
+        // 按月份 + 规格，从「月度产量质量」模块取累计数据
         // 返回 { 产量, 修补, 不良 }，找不到月份或规格时返回 0
-        // 月份键兼容：月度数据常用短格式「8月」，每日产量质量/订单履约用完整格式「2026年8月」
+        // 月份键兼容：月度数据常用短格式「8月」，月度产量质量/订单履约用完整格式「2026年8月」
         function findYieldMonthKey(monthName) {
             if (!monthName) return null;
             if (yieldData.months[monthName]) return monthName;
@@ -3742,7 +3742,7 @@
             return monthlyData.months.find(m => m.name === monthName || monthName.endsWith(m.name) || m.name.endsWith(monthName)) || null;
         }
 
-        // ============ 工段质量扣款·每日明细（每日产量质量模块，v1.30.276） ============
+        // ============ 工段质量扣款·每日明细（月度产量质量模块，v1.30.276） ============
         // 数据存 yieldData.months[yk].deductions = [{id, date, values:{工段:金额}}]，随 YIELD_KEY 持久化/联网同步。
         // 每天一条记录（5 个工段的扣款绝对值），扣款占比 = 该工段 / 当日合计 自动计算；月度数据模块的
         // 「工段质量扣款」自动取本明细的月度累计并取消手工输入（历史月无每日明细时沿用旧手工值，不覆盖）。
@@ -4017,7 +4017,7 @@
             };
         }
 
-        // 经营分析「每日产量质量」明细表取数：v1.30.221 优先「月度数据」模块（批量编辑录入）；无值时才回退外贸每日明细累计
+        // 经营分析「月度产量质量」明细表取数：v1.30.221 优先「月度数据」模块（批量编辑录入）；无值时才回退外贸每日明细累计
         function getForeignYieldSpecStats(monthName, spec) {
             const rec = findMonthlyRecord(monthName);
             const hasMonthly = !!(rec && rec.data && (
@@ -4039,14 +4039,14 @@
             return { 产量: 0, 修补: 0, 不良: 0 };
         }
 
-        // 月度数据中由「每日产量质量」模块自动带入的规格（50板/75板），国内板/砌块保持手动输入
+        // 月度数据中由「月度产量质量」模块自动带入的规格（50板/75板），国内板/砌块保持手动输入
         const YIELD_LINKED_COLS = ['50板', '75板'];
 
         // 规格是否由产量质量模块自动带入
         function isYieldLinkedCol(col) {
             return YIELD_LINKED_COLS.includes(col);
         }
-        // 该月份是否存在每日产量质量明细（50板/75板 每日明细记录）
+        // 该月份是否存在月度产量质量明细（50板/75板 每日明细记录）
         // 无明细 → 月度数据模块 50板/75板 恢复手动输入（接受粘贴/批量导入）；有明细 → 外贸导入优先，手动忽略
         function hasYieldDetail(monthName) {
             const yk = findYieldMonthKey(monthName);
@@ -4083,9 +4083,9 @@
             return changed;
         }
 
-        // ============ 每日外贸下线产量 / 国内板·砌块 每日产量质量（v1.30.338） ============
+        // ============ 每日外贸下线产量 / 国内板·砌块 月度产量质量（v1.30.338） ============
         // offlineRecords：每日外贸下线产量（仅 50板/75板），仅供给月度数据「下线量」，不参与任何其它公式。
-        // domesticRecords：国内板/砌块 每日产量质量，自动导入月度数据表格，并参与质量扣款（修补扣款+不良扣款）计算。
+        // domesticRecords：国内板/砌块 月度产量质量，自动导入月度数据表格，并参与质量扣款（修补扣款+不良扣款）计算。
         function hasOfflineSpec(monthName, spec) {
             const yk = findYieldMonthKey(monthName);
             const recs = (yk && yieldData.months[yk] && yieldData.months[yk].offlineRecords) || [];
@@ -4117,7 +4117,7 @@
                 不良: Math.round(recs.reduce((s2, r) => s2 + (parseFloat(r.defect) || 0), 0) * 10) / 10
             };
         }
-        // 某月份某规格是否由「每日产量质量」模块自动带入（只读）
+        // 某月份某规格是否由「月度产量质量」模块自动带入（只读）
         function isMonthlyAutoCol(row, col, monthName) {
             if (col === '50板' || col === '75板') {
                 if (row === '下线量') return hasOfflineSpec(monthName, col);
@@ -4346,7 +4346,7 @@
             if (labelEl) labelEl.textContent = yieldData.currentMonth || '';
             const rows = ['产量', '合格', '修补', '不良'];
             const recs = [...m.domesticRecords].sort((a, b) => (parseInt(a.date) || 0) - (parseInt(b.date) || 0) || (a.spec > b.spec ? 1 : -1));
-            if (recs.length === 0) { box.innerHTML = '<div class="analysis-empty">暂无国内板/砌块每日产量质量记录，点右上「+ 录入」开始录入（每行4列：下线量、合格、修补、不良）。</div>'; return; }
+            if (recs.length === 0) { box.innerHTML = '<div class="analysis-empty">暂无国内板/砌块月度产量质量记录，点右上「+ 录入」开始录入（每行4列：下线量、合格、修补、不良）。</div>'; return; }
             // v1.30.340：国内板/砌块没有分拣量，这里录入的「产量」就是它们的「下线量」
             let h = '<div class="table-scroll"><table><thead><tr><th>日期</th><th>规格</th><th class="right">下线量</th><th class="right">合格</th><th class="right">修补</th><th class="right">不良</th><th style="width:40px;"></th></tr></thead><tbody>';
             recs.forEach(r => {
@@ -4449,7 +4449,7 @@
             return rec.yieldOverride[col][row];
         }
         function onYieldLinkEdit(row, col) {
-            if (!confirmHistoricalEdit(yieldData.currentMonth, '修改每日产量质量数据')) {
+            if (!confirmHistoricalEdit(yieldData.currentMonth, '修改月度产量质量数据')) {
                 renderYieldQuality();
                 return;
             }
@@ -4461,7 +4461,7 @@
             recalcDefect();
         }
 
-        // 月度数据页手动刷新：从每日产量质量模块导入 50板/75板
+        // 月度数据页手动刷新：从月度产量质量模块导入 50板/75板
         function refreshYieldLinkedData() {
             const monthName = monthlyData.currentMonth;
             const yieldHasData = YIELD_LINKED_COLS.some(col => {
@@ -4469,7 +4469,7 @@
                 return MONTHLY_ROWS.some(row => (s[row] || 0) > 0);
             });
             if (!yieldHasData) {
-                showToast(`「每日产量质量」模块的「${monthName}」没有 50板/75板 数据`);
+                showToast(`「月度产量质量」模块的「${monthName}」没有 50板/75板 数据`);
                 return;
             }
             const rec = findMonthlyRecord(monthName);
@@ -5669,7 +5669,7 @@
                 });
             const optsHtml = monthOptions.map(n =>
                 `<option value="${n}"${n === selMonth ? ' selected' : ''}>${n}</option>`).join('');
-            // 分拣天数：所选月份在每日产量质量模块中的实际录入天数（按日期去重）
+            // 分拣天数：所选月份在月度产量质量模块中的实际录入天数（按日期去重）
             const yKey = findYieldMonthKey(selMonth);
             const yRecs = (yKey && yieldData.months[yKey]) ? (yieldData.months[yKey].records || []) : [];
             const sortDays = new Set(yRecs.map(r => r.date)).size;
@@ -5704,7 +5704,7 @@
             if (cmb) cmb.innerHTML = mHtml;
 
             // 2) 产量质量：月度累计汇总（含国内板/砌块）
-            // 全部规格（50板/75板/国内板/砌块）统一从月度数据模块当前月份取数（原 50板/75板 曾取自每日产量质量模块）
+            // 全部规格（50板/75板/国内板/砌块）统一从月度数据模块当前月份取数（原 50板/75板 曾取自月度产量质量模块）
             const ymName = selMonth;
             const cyEl = document.getElementById('cockpit-yield-month');
             if (cyEl) cyEl.textContent = (ymName || '').replace(/^\d+年/, '');
@@ -6132,8 +6132,8 @@
             });
         });
 
-        // 单月每日产量质量汇总（50板+75板）
-        // v1.30.221：优先读取「月度数据」模块（批量编辑录入）的 50板/75板；月度数据无值时才回退「每日产量质量」每日明细累计
+        // 单月月度产量质量汇总（50板+75板）
+        // v1.30.221：优先读取「月度数据」模块（批量编辑录入）的 50板/75板；月度数据无值时才回退「月度产量质量」每日明细累计
         // 原因：每日明细累计（尤其历史月份）可能残缺/不准，用户要求以月度数据批量编辑输入为准
         function getMonthYieldStats(monthName) {
             let sYield = 0, sDef = 0, sRep = 0, sQual = 0;
@@ -6161,7 +6161,7 @@
             }
             // v1.30.221：取值限制在 [0, 分拣量]，防止负不良导致外贸可入库 > 外贸分拣量
             const warehouse = safeGood(sYield, sDef); // 可入库总产量（产量−不良）
-            // v1.30.327：合格率用直接「合格」字段（与每日产量质量模块口径统一），不再派生 产量−不良−修补
+            // v1.30.327：合格率用直接「合格」字段（与月度产量质量模块口径统一），不再派生 产量−不良−修补
             const qual = sYield > 0 ? sQual / sYield * 100 : 0;
             const defectRate = sYield > 0 ? sDef / sYield * 100 : 0;
             const repairRate = sYield > 0 ? sRep / sYield * 100 : 0;
@@ -6419,7 +6419,7 @@
                     }
                     h += '</tbody></table></div>';
 
-                    // 每日产量质量明细表：每月 1 大行拆为 50板/75板 2 小行，末尾附均值行（分 50板/75板）
+                    // 月度产量质量明细表：每月 1 大行拆为 50板/75板 2 小行，末尾附均值行（分 50板/75板）
                     let foreignHtml = '<div class="analysis-sub-label">外贸分品种产量质量</div>';
                     foreignHtml += '<div class="table-scroll"><table class="analysis-table center"><thead><tr><th>月份</th><th>规格</th><th>可入库产量</th><th>产量占比</th><th>合格率</th><th>修补率</th><th>不良率</th></tr></thead><tbody>';
                     const foreignAcc = {
@@ -6475,7 +6475,7 @@
                     }
                     foreignHtml += '</tbody></table></div>';
 
-                    // 每日产量质量复合图表：产量用柱状图，合格率用折线图，50板/75板分色
+                    // 月度产量质量复合图表：产量用柱状图，合格率用折线图，50板/75板分色
                     foreignHtml += '<div class="analysis-chart-wrap"><canvas id="analysis-foreign-yield-chart"></canvas></div>';
                     yEl.innerHTML = h + foreignHtml;
 
@@ -6856,7 +6856,7 @@
 
         // ============ 月度分析（未完成月份的月度内数据分析） ============
         // v1.30.273：定位「未完成月份/非历史月份」的月度内分析；v1.30.319 起分析月份改为可自由选择历史月份（与其它模块一致），默认取 app 最新月份。
-        // 数据源 = 「每日产量质量」模块每日明细；与该页同规则：同一天第 3 条起的记录为修正数据（黄色行）。
+        // 数据源 = 「月度产量质量」模块每日明细；与该页同规则：同一天第 3 条起的记录为修正数据（黄色行）。
         // v1.30.274 修正数据口径：黄色修正条**计入指标2阶段比较**（各阶段加总算进去），**不计入指标1图表**（不单独加数据点）。
         // 指标3 团队表现（扣款占比/扣款绝对值）：工段质量扣款目前仅整月汇总，待支持按旬录入后开放（页面已预留）。
 
@@ -6911,7 +6911,7 @@
                 def += parseFloat(r.defect) || 0;
                 qual += parseFloat(r.qualified) || 0;
             });
-            // v1.30.327：合格率一律用直接录入的「合格」字段，与每日产量质量模块/月度数据口径统一（不再派生 产量−不良−修补）
+            // v1.30.327：合格率一律用直接录入的「合格」字段，与月度产量质量模块/月度数据口径统一（不再派生 产量−不良−修补）
             return { 产量: y, 合格: qual, 修补: rep, 不良: def };
         }
 
@@ -6952,10 +6952,10 @@
                     .map(n => `<option value="${n}"${n === selMonth ? ' selected' : ''}>${n}</option>`).join('');
             }
             const emptyTip = monthName
-                ? '「' + monthName + '」暂无每日明细数据，请先到「每日产量质量」模块录入。'
+                ? '「' + monthName + '」暂无每日明细数据，请先到「月度产量质量」模块录入。'
                 : '暂无月份数据。';
 
-            // ===== 指标1：每日产量质量-每日明细趋势图（外贸每日明细组合图：柱=可入库产量 50/75板，线=合格率） =====
+            // ===== 指标1：月度产量质量-每日明细趋势图（外贸每日明细组合图：柱=可入库产量 50/75板，线=合格率） =====
             if (cEl) {
                 disposeAnalysisChart('manalysisYield');
                 if (recs.length === 0) {
@@ -7028,7 +7028,7 @@
         }
 
         // ===== 指标3：团队表现 · 扣款占比趋势（v1.30.285） =====
-        // 数据 = 「每日产量质量」模块的工段质量扣款每日明细（yieldData.months[yk].deductions）。
+        // 数据 = 「月度产量质量」模块的工段质量扣款每日明细（yieldData.months[yk].deductions）。
         // 表现方案（v1.30.286 改口径）：5 条折线 = 5 个工段的**月内累计扣款占比**——
         //   1号 = 1号当日占比，2号 = 截止2号的累计占比（工段 1..N 日累计扣款 ÷ 1..N 日累计总扣款），以此类推。
         //   累计口径天然平滑，不再受单日波动干扰（用户反馈"每日占比变化太大"）。
@@ -7045,7 +7045,7 @@
             const yk = findYieldMonthKey(monthName);
             const dedRecs = ((yk && yieldData.months[yk] && yieldData.months[yk].deductions) || []);
             if (dedRecs.length === 0) {
-                el.innerHTML = '<div class="analysis-empty">「' + monthName + '」暂无工段质量扣款每日明细，请先到「每日产量质量」模块录入。</div>';
+                el.innerHTML = '<div class="analysis-empty">「' + monthName + '」暂无工段质量扣款每日明细，请先到「月度产量质量」模块录入。</div>';
                 return;
             }
             // 按日聚合（同日多条时合并，兼容旧数据）
@@ -7167,7 +7167,7 @@
             const { monthName, allRecs } = getManalysisRecords();
             const shortLabel = monthName ? (parseMonthName(monthName).month + '月') : '—';
             const emptyTip = monthName
-                ? '「' + monthName + '」暂无每日明细数据，请先到「每日产量质量」模块录入。'
+                ? '「' + monthName + '」暂无每日明细数据，请先到「月度产量质量」模块录入。'
                 : '暂无月份数据。';
             const domAll = getManalysisDomesticRecords(monthName);
             if (allRecs.length === 0 && domAll.length === 0) {
@@ -7488,7 +7488,7 @@
             setProfitNumber('profit-stat-net', rt.net);
             setProfitNumber('profit-stat-assess', rt.assess);
 
-            // 全月预估 = 实时值 × 时间系数（与「每日产量质量」预估口径一致：当前值 × 时间系数，同步放大）。
+            // 全月预估 = 实时值 × 时间系数（与「月度产量质量」预估口径一致：当前值 × 时间系数，同步放大）。
             // 历史月份 tf=1，预估与实时一致、不受影响。
             const ebitEst = rt.ebit * rt.tf;
             const assessEst = rt.assess * rt.tf;
@@ -8009,7 +8009,7 @@
             }
             monthlyData.currentMonth = mrec.name;
             saveMonthly();
-            // 2) 每日产量质量（长格式键）
+            // 2) 月度产量质量（长格式键）
             if (!yieldData.months[lmk]) yieldData.months[lmk] = { records: [] };
             yieldData.currentMonth = lmk;
             saveYield();
@@ -8057,7 +8057,7 @@
             // 目标月份：显式传入则用它，否则视为最新月份
             const target = monthName || latest;
             // 只要不是 app 最新月份，时间系数一律为 1（历史月数据已完成，无需按月度进度折算）
-            // 例外：每日产量质量页的预估卡传 ignoreLatestGuard=true——它始终投影「当前正在看的月份」的进度，
+            // 例外：月度产量质量页的预估卡传 ignoreLatestGuard=true——它始终投影「当前正在看的月份」的进度，
             // 不受"是否最新月"影响（否则当存在更晚月份时，产量页预估会被错误地压成 1）
             if (!ignoreLatestGuard && latest && target !== latest) return 1;
             // v1.30.191 新增：最新月但日历上已经过去（如现在已是9月、最新月还是8月）→ 该月实际已完结，
@@ -8329,7 +8329,7 @@
 
             if (mode === 'monthly') {
                 title.textContent = '批量编辑：月度下线量/分拣量/合格/修补';
-                hint.innerHTML = '格式：4 行 × 4 列，对应 <b>下线量 / 分拣量 / 合格 / 修补</b> × 50板/75板/国内板/砌块<br><b style="color:#3a7d5a;">不良 = 基数 − 合格 − 修补 自动计算，无需录入。50板、75板的分拣量由「每日产量质量」模块自动带入；若历史月份无外贸明细，可直接在此粘贴导入，导入值优先于自动带入。<b style="color:#9a5b00;">国内板、砌块没有「分拣量」概念：它们的下线量（= 在「每日产量质量」里录入的产量）才是产量基数，参与合格率/修补率/质量扣款计算；这两列的分拣量固定显示 "-"、导入时会被忽略。</b></b><br><span style="color:#888;">兼容：粘贴 3 行时按旧格式（分拣量 / 合格 / 修补）导入，下线量不变。</span>';
+                hint.innerHTML = '格式：4 行 × 4 列，对应 <b>下线量 / 分拣量 / 合格 / 修补</b> × 50板/75板/国内板/砌块<br><b style="color:#3a7d5a;">不良 = 基数 − 合格 − 修补 自动计算，无需录入。50板、75板的分拣量由「月度产量质量」模块自动带入；若历史月份无外贸明细，可直接在此粘贴导入，导入值优先于自动带入。<b style="color:#9a5b00;">国内板、砌块没有「分拣量」概念：它们的下线量（= 在「月度产量质量」里录入的产量）才是产量基数，参与合格率/修补率/质量扣款计算；这两列的分拣量固定显示 "-"、导入时会被忽略。</b></b><br><span style="color:#888;">兼容：粘贴 3 行时按旧格式（分拣量 / 合格 / 修补）导入，下线量不变。</span>';
                 textarea.value = getMonthlyBatchText();
                 yieldConfig.style.display = 'none';
                 deductionConfig.style.display = 'none';
@@ -8581,7 +8581,7 @@
         }
 
         // v1.30.315：跨模块月份同步创建。
-        // 任一模块新增月份，都在 月度数据 / 每日产量质量 / 订单履约 三个模块同时建月份并跳转，
+        // 任一模块新增月份，都在 月度数据 / 月度产量质量 / 订单履约 三个模块同时建月份并跳转，
         // 杜绝「在某模块加了月份、其它模块看不到」的错位。
         function ensureMonthEverywhere(lmk) {
             if (!lmk) return;
@@ -8639,7 +8639,7 @@
                     const v = el ? (parseFloat(el.value) || 0) : (_prev === undefined ? 0 : _prev);
                     if (!record.data[row]) record.data[row] = {};   // v1.30.337：老记录可能缺该行，先补齐再写（否则抛错中断整段保存）
                     if (row === '不良') {
-                        // 50板/75板：不良随每日产量质量模块同步带入；国内板/砌块：自动生成（产量−合格−修补），不能忽略
+                        // 50板/75板：不良随月度产量质量模块同步带入；国内板/砌块：自动生成（产量−合格−修补），不能忽略
                         record.data[row][col] = (isMonthlyAutoCol('不良', col, monthName))
                             ? Math.round(getMonthlyAutoVal('不良', col, monthName) * 10) / 10
                             : v;
@@ -8675,7 +8675,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.343';
+        const APP_VERSION = 'v1.30.344';
 
         function forceRefresh() {
             if ('caches' in window) {
@@ -8700,7 +8700,7 @@
             { id: 'manalysis', name: '月度分析', def: false, render: function(){ try{ renderMonthAnalysis(); }catch(e){} } },
             { id: 'profit',  name: '经营利润', def: false, render: function(){ try{ renderProfit(); }catch(e){} } },
             { id: 'order',   name: '订单履约', def: false, render: function(){ try{ renderOrderFulfillment(); }catch(e){} } },
-            { id: 'yield',   name: '每日产量质量', def: false, render: function(){ try{ renderYieldQuality(); }catch(e){} } },
+            { id: 'yield',   name: '月度产量质量', def: false, render: function(){ try{ renderYieldQuality(); }catch(e){} } },
             { id: 'monthly', name: '月度数据', def: false, render: function(){ try{ renderMonthly(); }catch(e){} } },
             { id: 'wage',    name: '人工成本', def: false, render: function(){ try{ renderWagePrediction(); }catch(e){} } },
             { id: 'params',  name: '基础设置', def: false, render: function(){ try{ renderSalary(); }catch(e){} } }
