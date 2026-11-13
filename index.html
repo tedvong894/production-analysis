@@ -1633,7 +1633,7 @@
         <!-- 批量录入每日记录（仅保留批量，单条也可粘贴1行） -->
         <div class="card" data-page-node-id="F2KP6RV3JFKLXhSnzebmDS">
             <div class="card-header compact card-header-light" style="display:flex; justify-content:space-between; align-items:center; gap:8px;" data-page-node-id="ic2h7iV6schAVOSb8Kx5PW">
-                <button class="btn btn-save" style="font-size:13px; padding:5px 14px; white-space:nowrap;" onclick="addYieldBatch()" data-page-node-id="HkUTZtw4R2mr4St8lKOEnT">+ 录入</button>
+                <button class="btn btn-save" style="font-size:13px; padding:5px 14px; white-space:nowrap;" onclick="addYieldBatch()" data-page-node-id="HkUTZtw4R2mr4St8lKOEnT">+ 外贸分拣录入</button>
             </div>
             <div class="yield-batch-body" data-page-node-id="SzTN8k4TNxr2i2x03KsQiF">
                 <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:5px;" data-page-node-id="grNn3RzzrmcKXerK3is05s">
@@ -1688,7 +1688,7 @@
         <!-- 工段质量扣款·每日明细（v1.30.276/277）：录入逻辑同产量每日明细——+录入(起始日+粘贴，每行=1天5列) / 批量添加弹窗(整表替换) / 添加日期 -->
         <div class="card" style="margin-top:14px;">
             <div class="card-header compact card-header-light">
-                <button class="btn btn-save" style="font-size:13px; padding:5px 14px;" onclick="addDeductionBatch()">+ 录入</button>
+                <button class="btn btn-save" style="font-size:13px; padding:5px 14px; white-space:nowrap;" onclick="addDeductionBatch()">+ 工段扣款录入</button>
             </div>
             <div class="yield-batch-body" style="padding:0 12px 10px;">
                 <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:5px;">
@@ -1719,7 +1719,7 @@
         <!-- 每日外贸下线产量（v1.30.338）：50板/75板 每日下线产量，仅供给月度数据「下线量」，不参与其它公式 -->
         <div class="card" style="margin-top:14px;">
             <div class="card-header compact card-header-light">
-                <button class="btn btn-save" style="font-size:13px; padding:5px 14px;" onclick="addOfflineBatch()">+ 录入</button>
+                <button class="btn btn-save" style="font-size:13px; padding:5px 14px; white-space:nowrap;" onclick="addOfflineBatch()">+ 外贸下线录入</button>
             </div>
             <div class="yield-batch-body" style="padding:0 12px 10px;">
                 <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:5px;">
@@ -1747,7 +1747,7 @@
         <!-- 国内板/砌块 月度产量质量（v1.30.338）：每日录入，自动导入月度数据表格，参与质量扣款计算 -->
         <div class="card" style="margin-top:14px;">
             <div class="card-header compact card-header-light">
-                <button class="btn btn-save" style="font-size:13px; padding:5px 14px;" onclick="addDomesticBatch()">+ 录入</button>
+                <button class="btn btn-save" style="font-size:13px; padding:5px 14px; white-space:nowrap;" onclick="addDomesticBatch()">+ 国内板下线录入</button>
             </div>
             <div class="yield-batch-body" style="padding:0 12px 10px;">
                 <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:5px;">
@@ -2450,7 +2450,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.344</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.345</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -4264,7 +4264,7 @@
             const labelEl = document.getElementById('offline-month-label');
             if (labelEl) labelEl.textContent = yieldData.currentMonth || '';
             const recs = [...m.offlineRecords].sort((a, b) => (parseInt(a.date) || 0) - (parseInt(b.date) || 0) || (a.spec > b.spec ? 1 : -1));
-            if (recs.length === 0) { box.innerHTML = '<div class="analysis-empty">暂无每日下线产量记录，点右上「+ 录入」开始录入（每行=1天：50板、75板 两列）。</div>'; return; }
+            if (recs.length === 0) { box.innerHTML = '<div class="analysis-empty">暂无每日下线产量记录，点右上「+ 外贸下线录入」开始录入（每行=1天：50板、75板 两列）。</div>'; return; }
             let h = '<div class="table-scroll"><table><thead><tr><th>日期</th><th>规格</th><th class="right">下线产量</th><th style="width:40px;"></th></tr></thead><tbody>';
             recs.forEach(r => {
                 h += '<tr><td>' + r.date + '</td><td>' + r.spec + '</td><td class="right"><input type="number" class="yield-input" id="off-' + r.id + '" value="' + fmtNum(r.offlineQty) + '" onchange="onOfflineCellEdit(\'' + r.id + '\')"></td><td><button class="btn-icon" onclick="deleteOfflineRecord(\'' + r.id + '\')" title="删除">🗑️</button></td></tr>';
@@ -4346,7 +4346,7 @@
             if (labelEl) labelEl.textContent = yieldData.currentMonth || '';
             const rows = ['产量', '合格', '修补', '不良'];
             const recs = [...m.domesticRecords].sort((a, b) => (parseInt(a.date) || 0) - (parseInt(b.date) || 0) || (a.spec > b.spec ? 1 : -1));
-            if (recs.length === 0) { box.innerHTML = '<div class="analysis-empty">暂无国内板/砌块月度产量质量记录，点右上「+ 录入」开始录入（每行4列：下线量、合格、修补、不良）。</div>'; return; }
+            if (recs.length === 0) { box.innerHTML = '<div class="analysis-empty">暂无国内板/砌块月度产量质量记录，点右上「+ 国内板下线录入」开始录入（每行4列：下线量、合格、修补、不良）。</div>'; return; }
             // v1.30.340：国内板/砌块没有分拣量，这里录入的「产量」就是它们的「下线量」
             let h = '<div class="table-scroll"><table><thead><tr><th>日期</th><th>规格</th><th class="right">下线量</th><th class="right">合格</th><th class="right">修补</th><th class="right">不良</th><th style="width:40px;"></th></tr></thead><tbody>';
             recs.forEach(r => {
@@ -8675,7 +8675,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.344';
+        const APP_VERSION = 'v1.30.345';
 
         function forceRefresh() {
             if ('caches' in window) {
