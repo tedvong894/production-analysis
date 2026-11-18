@@ -2456,7 +2456,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.350</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.351</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -7056,8 +7056,8 @@
         //   国内板/砌块 = domesticRecords[].yieldQty（每日录入的「产量」即下线量，v1.30.340 铁律）
         // ⚠️ 刻意不读 qualified / repair / defect 等质量字段——本图只看下线数据。
         // 风格沿用上方每日明细图：同款高度、柱形参数、legend、点击出 tooltip、x 轴无网格、左轴 beginAtZero；
-        // v1.30.350 定稿：日期按下线数据实际日期并集（有下线数据的日子都体现，如 11 号）；
-        // 总下线量趋势线挂在右轴 y1（标题「下线量」），对应上图右轴合格率折线的位置；
+        // v1.30.351 定稿：日期轴=当月 1 号到最大有数据日期的连续日期，无下线数据的日期趋势线落到 0；
+        // 总下线量趋势线（label「合计下线量」）挂在右轴 y1（标题「下线量」），对应上图合格率折线位置；
         // 左右轴宽固定 62px，两图右侧边缘对齐；仍不读任何质量字段。
         function renderManalysisOfflineChart() {
             const el = document.getElementById('manalysis-offline-chart');
@@ -7074,14 +7074,17 @@
                     : '暂无月份数据。') + '</div>';
                 return;
             }
-            // v1.30.349：日期按下线数据的实际日期取并集（不再裁剪到上图日期）——
-            // 凡是当日有下线数据的日期都体现，包括只有下线、上图外贸分拣没有的日子（如 11 号）。
+            // v1.30.351：日期轴扩展为当月 1 号到最大有数据日期的连续日期——
+            // 没有下线数据的日期趋势线落到 0（柱高度 0 自然不显示），完整体现每天生产情况。
             const daySet = {};
             offRecs.concat(domRecs).forEach(r => {
                 const d = parseInt(r && r.date, 10) || 0;
                 if (d > 0) daySet[d] = 1;
             });
-            const days = Object.keys(daySet).map(Number).sort((a, b) => a - b);
+            const seenDays = Object.keys(daySet).map(Number).sort((a, b) => a - b);
+            const maxDay = seenDays.length ? seenDays[seenDays.length - 1] : 0;
+            const days = [];
+            for (let d = 1; d <= maxDay; d++) days.push(d);
             const SPECS = ['50板', '75板', '国内板', '砌块'];
             const COLORS = { '50板': '#5b9bd5', '75板': '#ed7d31', '国内板': '#70ad47', '砌块': '#9b6dbb' };
             const valOf = (spec) => {
@@ -7117,7 +7120,7 @@
                     })).concat([{
                         // 总下线量趋势线：与上图「合格率-50板」同色同款折线，放在右轴
                         type: 'line',
-                        label: '下线量-合计',
+                        label: '合计下线量',
                         data: totalData,
                         borderColor: '#2e7d32', backgroundColor: '#2e7d32',
                         borderWidth: 3, pointRadius: 4, pointHoverRadius: 6,
@@ -8804,7 +8807,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.350';
+        const APP_VERSION = 'v1.30.351';
 
         function forceRefresh() {
             if ('caches' in window) {
