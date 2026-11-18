@@ -2433,27 +2433,30 @@
         <div class="analysis-card">
             <div class="analysis-card-title"><span class="idx">1</span>月度产量质量-每日明细趋势图</div>
             <div id="manalysis-yield-chart"></div>
-            <!-- v1.30.346：每日下线明细图（4 规格同图按日，仅下线量，不碰质量数据） -->
-            <div class="analysis-sub-label">每日下线明细图</div>
+        </div>
+
+        <!-- 指标2：每日下线明细图（v1.30.347 独立卡片：PDF 导出可按卡片单独勾选/隐藏；4 规格同图按日，仅下线量） -->
+        <div class="analysis-card" id="manalysis-offline-card">
+            <div class="analysis-card-title"><span class="idx">2</span>每日下线明细图</div>
             <div id="manalysis-offline-chart"></div>
         </div>
 
-        <!-- 指标2：团队表现 · 扣款占比趋势（v1.30.285：数据=月度产量质量·工段质量扣款每日明细；线=各工段每日占比，柱=当日扣款合计） -->
+        <!-- 指标3：团队表现 · 扣款占比趋势（v1.30.285：数据=月度产量质量·工段质量扣款每日明细；线=各工段每日占比，柱=当日扣款合计） -->
         <div class="analysis-card">
-            <div class="analysis-card-title"><span class="idx">2</span>团队表现 · 累计扣款占比趋势</div>
+            <div class="analysis-card-title"><span class="idx">3</span>团队表现 · 累计扣款占比趋势</div>
             <div id="manalysis-team-chart"></div>
         </div>
 
-        <!-- 指标3：阶段比较（上旬=1-10日 / 中旬=11-20日 / 下旬=21-月底） -->
+        <!-- 指标4：阶段比较（上旬=1-10日 / 中旬=11-20日 / 下旬=21-月底） -->
         <div class="analysis-card">
-            <div class="analysis-card-title"><span class="idx">3</span>阶段比较</div>
+            <div class="analysis-card-title"><span class="idx">4</span>阶段比较</div>
             <div id="manalysis-phase-table"></div>
         </div>
     </div>
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.346</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.347</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -6918,6 +6921,19 @@
             return { 产量: y, 合格: qual, 修补: rep, 不良: def };
         }
 
+        // v1.30.347：上图「每日明细趋势图」与下图「每日下线明细图」共用同一份日期边缘。
+        // 来源 = getManalysisRecords().recs（已剔除黄色修正行），与上图 byDay 完全一致；
+        // 下图优先复用本函数结果，保证同一天上下对齐，方便对照产量/合格率与下线量。
+        function getManalysisChartDays() {
+            const recs = (getManalysisRecords() || {}).recs || [];
+            const daySet = {};
+            recs.forEach(r => {
+                const d = parseInt(r && r.date, 10) || 0;
+                if (d > 0) daySet[d] = 1;
+            });
+            return Object.keys(daySet).map(Number).sort((a, b) => a - b);
+        }
+
         // v1.30.324：月度分析趋势图 tooltip 点击切换（点一次显示，再点同一点/点空白隐藏；鼠标划过不显示）
         function paToggleTip(chart, evt) {
             if (!chart) return;
@@ -7024,20 +7040,21 @@
                 }
             }
 
-            // v1.30.346：每日下线明细图（独立于上方外贸明细图，只有下线数据也能出图）
+            // v1.30.347：指标2 每日下线明细图（独立卡片，只有下线数据也能出图）
             renderManalysisOfflineChart();
-            // ===== 指标2：阶段比较（v1.30.277 起独立函数，含 总产量(手输)/外贸占比(自动) 列） =====
+            // ===== 指标4：阶段比较（v1.30.277 起独立函数，含 总产量(手输)/外贸占比(自动) 列） =====
             renderPhaseComparison();
             // 指标3：团队扣款占比趋势（v1.30.285）
             renderTeamDeductionTrend();
         }
 
-        // ===== 指标1 附：每日下线明细图（v1.30.346） =====
+        // ===== 指标2：每日下线明细图（v1.30.346 新增，v1.30.347 拆为独立卡片） =====
         // 4 规格同图、按日显示，只取下线量：
         //   50板/75板   = offlineRecords[].offlineQty（每日外贸下线产量）
         //   国内板/砌块 = domesticRecords[].yieldQty（每日录入的「产量」即下线量，v1.30.340 铁律）
         // ⚠️ 刻意不读 qualified / repair / defect 等质量字段——本图只看下线数据。
-        // 风格沿用上方每日明细图：同款柱形参数、legend、点击出 tooltip、x 轴无网格、左轴 beginAtZero。
+        // 风格沿用上方每日明细图：同款高度、柱形参数、legend、点击出 tooltip、x 轴无网格、左轴 beginAtZero；
+        // v1.30.347 起日期边缘与上图共用 getManalysisChartDays()。
         function renderManalysisOfflineChart() {
             const el = document.getElementById('manalysis-offline-chart');
             if (!el) return;
@@ -7053,13 +7070,16 @@
                     : '暂无月份数据。') + '</div>';
                 return;
             }
-            // 日期取两路记录的并集，保证「有下线数据的那天」才出柱
+            // v1.30.347：日期边缘对齐上图——外贸明细图有日期时严格复用其日期列表；
+            // 上图无外贸明细（本月只有下线数据）时，才回退到两路下线记录并集，保证下图独立可用。
+            const alignedDays = getManalysisChartDays();
             const daySet = {};
             offRecs.concat(domRecs).forEach(r => {
                 const d = parseInt(r && r.date, 10) || 0;
                 if (d > 0) daySet[d] = 1;
             });
-            const days = Object.keys(daySet).map(Number).sort((a, b) => a - b);
+            const ownDays = Object.keys(daySet).map(Number).sort((a, b) => a - b);
+            const days = alignedDays.length ? alignedDays : ownDays;
             const SPECS = ['50板', '75板', '国内板', '砌块'];
             const COLORS = { '50板': '#5b9bd5', '75板': '#ed7d31', '国内板': '#70ad47', '砌块': '#9b6dbb' };
             const valOf = (spec) => {
@@ -7074,7 +7094,7 @@
                 });
                 return days.map(d => Math.round((byDay[d] || 0) * 10) / 10);
             };
-            el.innerHTML = '<div class="analysis-chart-wrap short"><canvas id="manalysis-offline-canvas"></canvas></div>';
+            el.innerHTML = '<div class="analysis-chart-wrap"><canvas id="manalysis-offline-canvas"></canvas></div>';
             const ctx = document.getElementById('manalysis-offline-canvas');
             if (!ctx) return;
             _analysisCharts['manalysisOffline'] = new Chart(ctx, {
@@ -8759,7 +8779,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.346';
+        const APP_VERSION = 'v1.30.347';
 
         function forceRefresh() {
             if ('caches' in window) {
@@ -8846,7 +8866,7 @@
             return out;
         }
 
-        // 月度分析：3 个指标卡（导出时逐个可选，默认都不勾）
+        // 月度分析：4 个指标卡（含 v1.30.347 独立的每日下线明细图；导出时逐个可选，默认都不勾）
         function scanManalysisTables(el) {
             const out = [];
             Array.from(el.querySelectorAll('.analysis-card')).forEach(function (card, ci) {
@@ -9155,7 +9175,7 @@
                                 blocks.push(t.node);
                             });
                         } else if (p.id === 'manalysis') {
-                            // v1.30.282：月度分析按「指标卡」可选导出（3 个指标默认都不勾，用户按需选）
+                            // v1.30.282：月度分析按「指标卡」可选导出（4 个指标默认都不勾，用户按需选）
                             blocks = [];
                             if (el.firstElementChild) blocks.push(el.firstElementChild); // 页面抬头（月度分析 + 分析月份）
                             allT.forEach(function (t) { if (picked.has(t.key)) blocks.push(t.node); });
