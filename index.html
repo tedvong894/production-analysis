@@ -2459,7 +2459,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.354</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.355</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -7061,7 +7061,7 @@
         //   国内板/砌块 = domesticRecords[].yieldQty（每日录入的「产量」即下线量，v1.30.340 铁律）
         // ⚠️ 刻意不读 qualified / repair / defect 等质量字段——本图只看下线数据。
         // 风格沿用上方每日明细图：同款高度、柱形参数、legend、点击出 tooltip、x 轴无网格、左轴 beginAtZero；
-        // v1.30.351 定稿：日期轴=当月 1 号到最大有数据日期的连续日期，无下线数据的日期趋势线落到 0；
+        // v1.30.355 定稿：日期轴=当月 1 号到最大有数据日期的连续日期，无下线数据的日期趋势线断开（null 不连线）；
         // 总下线量趋势线（label「合计下线量」、浅黄 #ecd076，v1.30.353 起避开上图合格率绿/亮黄 #ffd400）挂在右轴 y1（标题「下线量」）；
         // 左右轴宽固定 62px，两图右侧边缘对齐；仍不读任何质量字段。
         function renderManalysisOfflineChart() {
@@ -7106,8 +7106,12 @@
             };
             const specData = {};
             SPECS.forEach(spec => { specData[spec] = valOf(spec); });
-            // v1.30.350：恢复总下线量趋势线 = 4 规格下线量逐日合计（挂右轴），对应上图合格率折线的位置
-            const totalData = days.map((_, i) => Math.round(SPECS.reduce((sum, spec) => sum + (specData[spec][i] || 0), 0) * 10) / 10);
+            // 总下线量趋势线 = 4 规格下线量逐日合计（挂右轴），对应上图合格率折线的位置
+            // v1.30.355：全部产品下线量=0 的日期给 null（Chart.js 遇 null 断线），不再连成 V 字
+            const totalData = days.map((_, i) => {
+                const t = Math.round(SPECS.reduce((sum, spec) => sum + (specData[spec][i] || 0), 0) * 10) / 10;
+                return t > 0 ? t : null;
+            });
             // v1.30.354：下线天数 = 4 规格合计下线量 > 0 的天数（全部产品下线量为 0 的天不计）
             const offlineDays = totalData.filter(v => (v || 0) > 0).length;
             el.innerHTML = '<div class="analysis-chart-stat">下线天数：<b>' + offlineDays + '</b> 天</div>'
@@ -7133,7 +7137,7 @@
                         borderColor: '#ecd076', backgroundColor: '#ecd076',
                         borderWidth: 3, pointRadius: 4, pointHoverRadius: 6,
                         fill: false, tension: 0.1,
-                        yAxisID: 'y1', order: 1, spanGaps: true
+                        yAxisID: 'y1', order: 1, spanGaps: false   // v1.30.355：遇 null 断开，不连无下线日
                     }])
                 },
                 options: {
@@ -8815,7 +8819,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.354';
+        const APP_VERSION = 'v1.30.355';
 
         function forceRefresh() {
             if ('caches' in window) {
