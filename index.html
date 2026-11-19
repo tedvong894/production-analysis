@@ -191,6 +191,9 @@
         .amm-item input { cursor: pointer; width: 15px; height: 15px; }
         .analysis-chart-wrap { position: relative; width: 100%; height: 280px; margin: 8px 0 4px; }
         .analysis-chart-wrap.short { height: 240px; }
+        /* v1.30.354：图表统计小字（分拣天数 / 下线天数），低对比、图表上方一行 */
+        .analysis-chart-stat { font-size: 12px; color: #666; margin: 6px 0 0 2px; line-height: 1.4; }
+        .analysis-chart-stat b { color: #333; font-weight: 700; }
         .analysis-chart-wrap.mini { height: 220px; }
         @media (max-width: 480px) {
             .analysis-chart-wrap { height: 240px; }
@@ -2456,7 +2459,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.353</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.354</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -6996,7 +6999,9 @@
                         q50.push(s50.产量 > 0 ? (s50.合格 || 0) / s50.产量 * 100 : null);
                         q75.push(s75.产量 > 0 ? (s75.合格 || 0) / s75.产量 * 100 : null);
                     });
-                    cEl.innerHTML = '<div class="analysis-chart-wrap"><canvas id="manalysis-yield-canvas"></canvas></div>';
+                    // v1.30.354：分拣天数 = 有外贸分拣记录的天数（recs 已剔除黄色修正行）
+                    cEl.innerHTML = '<div class="analysis-chart-stat">分拣天数：<b>' + days.length + '</b> 天</div>'
+                        + '<div class="analysis-chart-wrap"><canvas id="manalysis-yield-canvas"></canvas></div>';
                     const mctx = document.getElementById('manalysis-yield-canvas');
                     if (mctx) {
                         _analysisCharts['manalysisYield'] = new Chart(mctx, {
@@ -7103,7 +7108,10 @@
             SPECS.forEach(spec => { specData[spec] = valOf(spec); });
             // v1.30.350：恢复总下线量趋势线 = 4 规格下线量逐日合计（挂右轴），对应上图合格率折线的位置
             const totalData = days.map((_, i) => Math.round(SPECS.reduce((sum, spec) => sum + (specData[spec][i] || 0), 0) * 10) / 10);
-            el.innerHTML = '<div class="analysis-chart-wrap"><canvas id="manalysis-offline-canvas"></canvas></div>';
+            // v1.30.354：下线天数 = 4 规格合计下线量 > 0 的天数（全部产品下线量为 0 的天不计）
+            const offlineDays = totalData.filter(v => (v || 0) > 0).length;
+            el.innerHTML = '<div class="analysis-chart-stat">下线天数：<b>' + offlineDays + '</b> 天</div>'
+                + '<div class="analysis-chart-wrap"><canvas id="manalysis-offline-canvas"></canvas></div>';
             const ctx = document.getElementById('manalysis-offline-canvas');
             if (!ctx) return;
             _analysisCharts['manalysisOffline'] = new Chart(ctx, {
@@ -7149,7 +7157,7 @@
                         y1: {
                             type: 'linear',
                             position: 'right',
-                            title: { display: true, text: '下线量', font: { size: 11 } },
+                            title: { display: true, text: '合计下线量', font: { size: 11 } },
                             beginAtZero: true,
                             grid: { drawOnChartArea: false },
                             afterFit: function (scale) { scale.width = 62; }   // v1.30.348：两图右轴等宽
@@ -8807,7 +8815,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.353';
+        const APP_VERSION = 'v1.30.354';
 
         function forceRefresh() {
             if ('caches' in window) {
