@@ -2459,7 +2459,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.355</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.356</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -8819,7 +8819,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.355';
+        const APP_VERSION = 'v1.30.356';
 
         function forceRefresh() {
             if ('caches' in window) {
@@ -9294,6 +9294,7 @@
         // iOS Safari 会从 HTTP 缓存取回旧版 index.html（Pages max-age=600），与新版交错时
         // APP_VERSION 来回翻转 → 版本检查 / SW 接管 两处 reload 互相触发 → 无限刷新「卡死进不去」。
         // 8 秒窗口内最多允许 2 次自动刷新；超限即停，页面照常可用（不再阻断用户进 app）。
+        // v1.30.356：checkVersion / controllerchange 已不再调用它；函数保留仅为兼容可能的手动调用。
         function _safeReload(reason) {
             try {
                 var k = 'pa_reload_guard';
@@ -9321,9 +9322,10 @@
             // 先写入当前版本号，避免版本不符时陷入「不一致→重载→仍不一致」的无限重载死循环
             try { localStorage.setItem('app_version', APP_VERSION); } catch (e) {}
             if (savedVer && savedVer !== APP_VERSION) {
-                // 版本变化，刷新一次以加载新代码（受 _safeReload 守卫限制，不会震荡）
-                _safeReload('version:' + savedVer + '->' + APP_VERSION);
-                return;
+                // v1.30.356 单机稳定：不再自动 reload。
+                // 单机/弱网时 SW 缓存旧 HTML 与本机版本号会来回翻转，自动刷新会把正在渲染的页面反复打断
+                // → 顶部标题出来、主体全白、过会又好的「抽搐」。版本更新交给 60s 自检 banner，用户主动点才刷。
+                try { console.info('[版本] 本机记录=' + savedVer + ' 当前=' + APP_VERSION + '，不自动刷新'); } catch (e) {}
             }
         }
 
@@ -9364,11 +9366,11 @@
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(function () {});
             // 新 Service Worker 接管页面时刷新以加载最新 HTML。
-            // v1.30.342：原 reg.installing.statechange 里还有一条 reload，与此处重复触发，iOS 上叠加成刷新循环 → 已删除。
-            // 两处自动刷新统一走 _safeReload 守卫；sw.js 对导航请求用 no-store，保证刷到的一定是最新 HTML。
-            var _reloaded = false;
+            // v1.30.342：原 reg.installing.statechange 里的 reload 已删除（与此处叠加成刷新循环）。
+            // v1.30.356：此处的 controllerchange reload 也删除——单机/弱网下 SW 缓存版本翻转会触发它，
+            // 与 checkVersion 交替刷新造成「抽搐」白屏。新版本由 60s 自检 banner 提示用户主动更新。
             navigator.serviceWorker.addEventListener('controllerchange', function () {
-                if (!_reloaded) { _reloaded = true; _safeReload('controllerchange'); }
+                try { console.info('[SW] 新版本已接管，等待用户主动更新'); } catch (e) {}
             });
         }
 
