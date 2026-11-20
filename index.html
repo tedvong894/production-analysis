@@ -213,6 +213,10 @@
         .analysis-table.profit-tbl td:first-child { white-space: nowrap; }
         /* v1.30.357：产量质量汇总表与外贸分品种表的月份列统一固定宽度，避免日期框忽宽忽窄 */
         .analysis-table.month-narrow th:first-child, .analysis-table.month-narrow td:first-child { width: 190px; min-width: 190px; max-width: 190px; }
+        /* v1.30.358：外贸分品种表列宽协调——月份列保持 190px 与汇总表一致，规格列收窄，其余数值列均分剩余宽度。
+           独立类 + colgroup 控制，避免 month-narrow 的 td:first-child 规则误伤 rowspan 第二行的「规格」单元格 */
+        .analysis-table.foreign-spec-table { table-layout: fixed; }
+        .analysis-table.foreign-spec-table th, .analysis-table.foreign-spec-table td { overflow: hidden; text-overflow: ellipsis; }
         .analysis-table th, .analysis-table td { border: 1px solid #e3e8f0; padding: 7px 8px; text-align: right; white-space: nowrap; }
         .analysis-table th { background: #f2f5fa; color: #1a1a2e; font-weight: 700; text-align: center; white-space: nowrap; }
         .analysis-table td:first-child, .analysis-table th:first-child { text-align: center; }
@@ -2461,7 +2465,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.357</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.358</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -6432,7 +6436,7 @@
 
                     // 月度产量质量明细表：每月 1 大行拆为 50板/75板 2 小行，末尾附均值行（分 50板/75板）
                     let foreignHtml = '<div class="analysis-sub-label">外贸分品种产量质量</div>';
-                    foreignHtml += '<div class="table-scroll"><table class="analysis-table center month-narrow"><thead><tr><th>月份</th><th>规格</th><th>可入库产量</th><th>产量占比</th><th>合格率</th><th>修补率</th><th>不良率</th></tr></thead><tbody>';
+                    foreignHtml += '<div class="table-scroll"><table class="analysis-table center foreign-spec-table"><colgroup><col style="width:190px"><col style="width:90px"><col><col><col><col><col></colgroup><thead><tr><th>月份</th><th>规格</th><th>可入库产量</th><th>产量占比</th><th>合格率</th><th>修补率</th><th>不良率</th></tr></thead><tbody>';
                     const foreignAcc = {
                         '50板': { wh: [], ratio: [], qual: [], rep: [], def: [] },
                         '75板': { wh: [], ratio: [], qual: [], rep: [], def: [] }
@@ -8821,7 +8825,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.357';
+        const APP_VERSION = 'v1.30.358';
 
         function forceRefresh() {
             if ('caches' in window) {
