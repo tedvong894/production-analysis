@@ -2465,7 +2465,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.358</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.359</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -8825,7 +8825,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.358';
+        const APP_VERSION = 'v1.30.359';
 
         function forceRefresh() {
             if ('caches' in window) {
@@ -10374,9 +10374,15 @@
                 if (_pulled && _lastCloudUpdatedAt) {
                     let meta;
                     try { meta = await sbPullMeta(getSyncBoard()); }
-                    catch (e) { meta = undefined; }   // 探测异常 → 降级走整包拉取兜底，不因此中断同步
-                    if (meta === undefined) {
-                        // 探测失败：透传，下面做整包拉取
+                    catch (e) { meta = 'PROBE_FAILED'; }   // v1.30.359：探测失败不再降级整包拉取（弱网下会让出站流量翻倍、正是刷爆额元的元凶之一）
+                    if (meta === 'PROBE_FAILED') {
+                        // 探测失败：默认跳过本轮，等下一次轮询重试（探测都失败时整包拉取多半也失败，没必要再打一次大包）。
+                        // 例外：本机数据被清空（iOS 驱逐 / 存储写失败）时必须整包拉取自救 → 透传走下面的 sbPull()
+                        const _nowF = Date.now();
+                        if (!(localDataMissing() && (_nowF - _lastForcedPullAt) > 60000)) {
+                            _lastSyncAt = new Date(); _syncing = false; return;
+                        }
+                        _lastForcedPullAt = _nowF;
                     } else if (meta === null) {
                         // 云端无该行：等同「暂无数据」分支处理
                         _pulled = true; _lastSyncAt = new Date(); setSync('已同步', 'on');
@@ -10662,18 +10668,19 @@
             // 补 pageshow（移动端恢复/前进后退缓存最稳的触发）+ visibilitychange，确保回到 app 立即拉取。
             window.addEventListener('pageshow', () => syncNow(false));
             document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncNow(false); });
-            // v1.30.330：轮询由 20s 收紧到 10s。因已改为「先轻量探测 updated_at、未变即跳过整包拉取」，
-            // 空闲轮询流量仅几十字节，收紧到 10s 也不会增加负担，跨设备刚改完体感更跟手。
-            // v1.30.334：云端被限制（402）期间退避到 5 分钟探一次 —— 省电、不再空打请求；
-            //   一旦探测到恢复（不再 402）立刻自动回到 10s 的正常节奏。
+            // v1.30.359：轮询由 10s 放宽到 60s —— Supabase 免费出站额度被自动同步刷爆（21.4GB/5GB）后紧急止血。
+            // 根因：多设备长开 app，探测失败/弱网时会降级成「整包拉取」，累积出站流量打满 5GB 额度 → 项目被暂停（402）。
+            // 放宽到 60s 后空闲轮询流量约为原来的 1/6；稳定性与可用性优先，跨设备同步慢一点可接受。
+            // 云端被限制（402）期间退避到 10 分钟探一次 —— 省电、不再空打请求；
+            //   一旦探测到恢复（不再 402）自动回到 60s 的正常节奏。
             setInterval(() => {
                 if (document.visibilityState !== 'visible') return;
                 if (_cloudRestricted) {
-                    _restrictedProbe = (_restrictedProbe + 1) % 30;   // 30 × 10s = 5 分钟
+                    _restrictedProbe = (_restrictedProbe + 1) % 10;   // 10 × 60s = 10 分钟
                     if (_restrictedProbe !== 0) return;
                 }
                 syncNow(false);
-            }, 10000);
+            }, 60000);
             // v1.30.335：手动备份模式下，离开页面/切后台不再偷偷上传（只留在本机）
             window.addEventListener('beforeunload', () => { if (_dirty && SYNC.autoUpload) pushState(); });
             document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && _dirty && SYNC.autoUpload) pushState(); });
