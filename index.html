@@ -777,6 +777,8 @@
         /* 修正数据行：同一天多条记录——产量第 3 条起、工段扣款第 2 条起，用橙色字体区分（!important 压过扣款占比单元格的 inline #888；输入框文字同步橙色） */
         tr.yield-correction-row td { color: #e65100 !important; font-weight: 600; }
         tr.yield-correction-row input.deduction-input { color: #e65100 !important; font-weight: 600; }
+        /* v1.30.360：外贸下线「调整数据」行——同日同规格第 2 笔起，红色显示、不参与任何汇总（逻辑同扣款调整行） */
+        tr.offline-correction-row td, tr.offline-correction-row input { color: #c0392b !important; font-weight: 600; }
         /* 订单履约：大屏两列布局，左列期初/过程累计/结果指标，右列批量录入/历史录入/差异调整；
            左右两列整体等高等齐（顶部/底部同高），卡片按内容自然高度，不强制拉伸，空白留在短列底部 */
         .order-grid-2x2 {
@@ -2465,7 +2467,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.359</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.360</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -4101,6 +4103,22 @@
         // ============ 每日外贸下线产量 / 国内板·砌块 月度产量质量（v1.30.338） ============
         // offlineRecords：每日外贸下线产量（仅 50板/75板），仅供给月度数据「下线量」，不参与任何其它公式。
         // domesticRecords：国内板/砌块 月度产量质量，自动导入月度数据表格，并参与质量扣款（修补扣款+不良扣款）计算。
+        // v1.30.360：判断一条 50/75 下线记录是否为「调整数据」（同一天同规格第 2 笔起）。
+        //   口径与工段扣款 isDeductionCorrRow 统一（第 2 条起为调整行），但分组键含规格：
+        //   一次录入会同时生成 50板 + 75板 两条，只按「同日」分组会把另一规格误判为调整行。
+        //   recs 传该月原始 offlineRecords 数组（未排序），按数组顺序 = 录入先后判定。
+        function isOfflineCorrRow(rec, recs) {
+            if (!rec || !Array.isArray(recs)) return false;
+            const key = r => String(r && r.date) + '|' + String(r && r.spec);
+            const target = key(rec);
+            let seq = 0;
+            for (let i = 0; i < recs.length; i++) {
+                if (key(recs[i]) !== target) continue;
+                seq++;
+                if (recs[i] === rec || (rec.id && recs[i].id === rec.id)) break;
+            }
+            return seq > 1;
+        }
         function hasOfflineSpec(monthName, spec) {
             const yk = findYieldMonthKey(monthName);
             const recs = (yk && yieldData.months[yk] && yieldData.months[yk].offlineRecords) || [];
@@ -4115,7 +4133,9 @@
             const empty = { 下线量: 0 };
             const yk = findYieldMonthKey(monthName);
             if (!yk || !yieldData.months[yk]) return empty;
-            const recs = (yieldData.months[yk].offlineRecords || []).filter(r => r.spec === spec);
+            const allRecs = yieldData.months[yk].offlineRecords || [];
+            // v1.30.360：调整行（同日同规格第 2 笔起）不汇总进下线量
+            const recs = allRecs.filter(r => r.spec === spec && !isOfflineCorrRow(r, allRecs));
             if (recs.length === 0) return empty;
             return { 下线量: Math.round(recs.reduce((s2, r) => s2 + (parseFloat(r.offlineQty) || 0), 0) * 10) / 10 };
         }
@@ -4177,7 +4197,8 @@
             if (!record.data['下线量']) record.data['下线量'] = {};
             let changed = false;
             ['50板', '75板'].forEach(col => {
-                const f = recs.filter(r => r.spec === col);
+                // v1.30.360：调整行不汇总进月度下线量
+                const f = recs.filter(r => r.spec === col && !isOfflineCorrRow(r, recs));
                 if (f.length === 0) return; // 该规格无每日下线产量 → 不覆盖月度手动值
                 const v = Math.round(f.reduce((s2, r) => s2 + (parseFloat(r.offlineQty) || 0), 0) * 10) / 10;
                 const old = parseFloat(record.data['下线量'][col]) || 0;
@@ -4282,7 +4303,10 @@
             if (recs.length === 0) { box.innerHTML = '<div class="analysis-empty">暂无每日下线产量记录，点右上「+ 外贸下线录入」开始录入（每行=1天：50板、75板 两列）。</div>'; return; }
             let h = '<div class="table-scroll"><table><thead><tr><th>日期</th><th>规格</th><th class="right">下线产量</th><th style="width:40px;"></th></tr></thead><tbody>';
             recs.forEach(r => {
-                h += '<tr><td>' + r.date + '</td><td>' + r.spec + '</td><td class="right"><input type="number" class="yield-input" id="off-' + r.id + '" value="' + fmtNum(r.offlineQty) + '" onchange="onOfflineCellEdit(\'' + r.id + '\')"></td><td><button class="btn-icon" onclick="deleteOfflineRecord(\'' + r.id + '\')" title="删除">🗑️</button></td></tr>';
+                // v1.30.360：同日同规格第 2 笔起 = 调整行，红色显示、不汇总（与扣款调整行统一逻辑）
+                const isCorr = isOfflineCorrRow(r, m.offlineRecords);
+                const rowAttr = isCorr ? ' class="offline-correction-row" title="调整数据（不参与下线量汇总）"' : '';
+                h += '<tr' + rowAttr + '><td>' + r.date + '</td><td>' + r.spec + '</td><td class="right"><input type="number" class="yield-input" id="off-' + r.id + '" value="' + fmtNum(r.offlineQty) + '" onchange="onOfflineCellEdit(\'' + r.id + '\')"></td><td><button class="btn-icon" onclick="deleteOfflineRecord(\'' + r.id + '\')" title="删除">🗑️</button></td></tr>';
             });
             h += '</tbody></table></div>';
             box.innerHTML = h;
@@ -7088,7 +7112,8 @@
             // v1.30.351：日期轴扩展为当月 1 号到最大有数据日期的连续日期——
             // 没有下线数据的日期趋势线落到 0（柱高度 0 自然不显示），完整体现每天生产情况。
             const daySet = {};
-            offRecs.concat(domRecs).forEach(r => {
+            // v1.30.360：50/75 调整行不进日期轴，避免「只有调整数据」的日子多出一个空柱点
+            offRecs.filter(r => !isOfflineCorrRow(r, offRecs)).concat(domRecs).forEach(r => {
                 const d = parseInt(r && r.date, 10) || 0;
                 if (d > 0) daySet[d] = 1;
             });
@@ -7105,6 +7130,7 @@
                 const byDay = {};
                 src.forEach(r => {
                     if (!r || r.spec !== spec) return;
+                    if (!isDom && isOfflineCorrRow(r, offRecs)) return; // v1.30.360：调整行不进柱状图
                     const d = parseInt(r.date, 10) || 0;
                     if (d > 0) byDay[d] = (byDay[d] || 0) + (parseFloat(r[field]) || 0);
                 });
@@ -8825,7 +8851,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.359';
+        const APP_VERSION = 'v1.30.360';
 
         function forceRefresh() {
             if ('caches' in window) {
