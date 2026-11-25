@@ -2276,12 +2276,7 @@
 
                 <div class="sync-field">
                     <label><input type="checkbox" id="sync-enabled" style="vertical-align:middle; margin-right:6px;">启用联网同步</label>
-                    <div class="hint">开启后：本机修改<b>不会</b>自动上云，需点「⬆️ 上传云端」手动备份；打开 / 切回本页自动拉取云端最新；多台设备填相同「同步标识」即共用同一份数据。</div>
-                </div>
-
-                <div class="sync-field">
-                    <label><input type="checkbox" id="sync-autoupload" style="vertical-align:middle; margin-right:6px;">自动上传（修改后立即上云）</label>
-                    <div class="hint">默认关闭。关闭时本机修改只留在本机，点「上传云端」才会备份到云端。</div>
+                    <div class="hint">开启后：所有数据往来都靠手动——点「⬆️ 上传云端」备份本机、点「⬇️ 拉取云端」获取云端。打开页面、切回前台都不会自动同步；多台设备用同一套账号即指向同一份数据。</div>
                 </div>
 
                 <div class="sync-field">
@@ -2308,9 +2303,9 @@
                 <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:4px;">
                     <button class="btn-sm" style="font-size:13px; padding:8px 14px;" onclick="saveSyncPanelCfg()">保存设置</button>
                     <button class="btn-sm" style="background:#2d8a5a;color:#fff;font-size:13px;padding:8px 14px;" onclick="syncPanelPush()" title="把本机数据上传到云端（以本机为准，请确认本机是最新数据）">⬆️ 上传云端</button>
-                    <button class="btn-sm" style="font-size:13px; padding:8px 14px;" onclick="syncPanelPull()" title="以云端为准，拉取覆盖本机（本机有未上云改动时会先推送本机）">⬇️ 拉取云端</button>
+                    <button class="btn-sm" style="font-size:13px; padding:8px 14px;" onclick="syncPanelPull()" title="以云端为准，拉取覆盖本机（本机有未上传改动时会先阻止，需先手动上传）">⬇️ 拉取云端</button>
                 </div>
-                <div class="hint" style="margin-top:8px;">规则：<b>上传为手动</b>——本机改完点「⬆️ 上传云端」才上云（改动会一直标着「有未上传改动」，跨刷新不丢）；打开页面 / 切回前台 / 每 10 秒自动拉取云端（正在输入时不打断）；本机有未上传改动时绝不拉取云端，绝不用旧数据覆盖本机。</div>
+                <div class="hint" style="margin-top:8px;">规则：<b>上传、下载全部手动</b>——本机改完点「⬆️ 上传云端」才上云（改动会一直标着「有未上传改动」，跨刷新不丢）；要拿云端数据请点「⬇️ 拉取云端」；打开页面、切回前台、刷新都不会自动同步。本机有未上传改动时绝不拉取云端，绝不用旧数据覆盖本机。</div>
             </div>
         </div>
     </div>
@@ -2467,7 +2462,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.361</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.362</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -8851,7 +8846,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.361';
+        const APP_VERSION = 'v1.30.362';
 
         function forceRefresh() {
             if ('caches' in window) {
@@ -9599,7 +9594,7 @@
             if (!el) return;
             if (!SYNC.enabled) { el.textContent = '联网同步未开启'; return; }
             if (_cloudRestricted) { el.textContent = '云端受限（额度用尽），暂时无法上传'; return; }
-            if (_dirty && !SYNC.autoUpload) { el.textContent = '有未上传改动'; return; }
+            if (_dirty) { el.textContent = '有未上传改动'; return; }
             el.textContent = _lastSyncAt ? ('已同步 ' + _fmtClock(_lastSyncAt)) : '尚未上传';
         }
 
@@ -9793,8 +9788,9 @@
                 if (keys.length === 0) { showBackupMsg('warn', '❌ 该快照不含可恢复数据'); return; }
                 keys.forEach(k => lsSet(k, JSON.stringify(map[k])));   // v1.30.331：走安全写入（配额不足会明确提示，不再静默失败）
                 reloadAllData();
-                showBackupMsg('ok', '✅ 已回滚到 ' + ym + ' 快照，共恢复 ' + keys.length + ' 项。正在同步云端…');
-                pushState();
+                // v1.30.362：回滚后不自动推云端，只标脏提示手动上传
+                _dirty = true; _markPending();
+                showBackupMsg('ok', '✅ 已回滚到 ' + ym + ' 快照，共恢复 ' + keys.length + ' 项。如需备份到云端，请点「⬆️ 上传云端」。');
             } catch (e) { showBackupMsg('warn', '❌ 回滚失败：' + e.message); }
         }
 
@@ -9839,8 +9835,8 @@
         }
 
         // ============ 联网同步（Supabase）============
-        // 规则对齐「军机处」：云端为权威 + 本地编辑即推送（push-on-edit，250ms 防抖）；
-        // pull 采纳云端、绝不反向写云端；_dirty 脏标记守卫；首拉离线保护；离开页面兜底 flush。
+        // v1.30.362：全手动同步——本地编辑只标脏、不自动推送；数据只在用户点「上传/拉取云端」时往来。
+        // 手动拉取采纳云端；_dirty 脏标记守卫；首拉离线保护；数据保护安全阀保留。
         // 复用军机处同一 Supabase 项目与 workbench_state 表（字段 id/data/updated_at），用本 app 专属 board 行隔离。
         const SYNC_CFG_KEY = 'production_analysis_sync_cfg';
         // ⚠️ v1.30.288：这是老版本写死在网页里的「公开固定 board」。任何人拿网页里公开的 anon key
@@ -9851,14 +9847,16 @@
             url: 'https://gcwehwqcccmjxrqtolev.supabase.co',
             anon: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdjd2Vod3FjY2NtanhycXRvbGV2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ2MTQzNDAsImV4cCI6MjEwMDE5MDM0MH0.X0X-75d1wPSTXECZDRVtkWVyDaj9ot9JLp_Qc2YamB8',
             table: 'workbench_state',
-            // v1.30.335：云端备份改为「手动」——本机修改不再自动上云，点「上传云端」才上传。
-            //   （军机处等其它 app 是各自独立代码 + 独立配置 key，不受影响，仍为自动备份）
+            // v1.30.362：全手动同步——自动上传/自动拉取全部移除，只认用户点「上传云端」「拉取云端」。
+            //   此字段保留仅为兼容旧配置读取，恒为 false，代码路径里已无自动推送。
             autoUpload: false
         };
         function loadSyncCfg() {
             let cfg = {};
             try { cfg = JSON.parse(localStorage.getItem(SYNC_CFG_KEY) || '{}') || {}; } catch (e) { cfg = {}; }
-            return Object.assign({}, SYNC_DEFAULT, cfg);
+            const merged = Object.assign({}, SYNC_DEFAULT, cfg);
+            merged.autoUpload = false;   // v1.30.362：无论旧配置如何，自动上传一律关闭
+            return merged;
         }
         let SYNC = loadSyncCfg();
         delete SYNC.board;   // v1.30.288：不再使用固定 board（改为按账号派生）
@@ -10107,8 +10105,8 @@
             if (!SYNC.enabled) { setSync('本地'); return; }
             if (!getSyncBoard()) { setSync('本地'); return; }   // v1.30.288：未登录不写云端
             if (!_pulled) return;
-            // v1.30.335：手动备份模式（autoUpload=false）下，只有用户点「上传云端」才推
-            if (!SYNC.autoUpload && !manual) { _markPending(); return; }
+            // v1.30.362：只允许手动上传（用户点「上传云端」manual=true）；任何自动路径一律拒绝
+            if (!manual) { _markPending(); return; }
             setSync('同步中…', 'busy');
             clearTimeout(_pushTimer);
             _pushTimer = setTimeout(async () => {
@@ -10388,8 +10386,7 @@
                 //   等用户点「上传云端」；绝不拿云端旧数据覆盖本机。
                 if (_dirty && _pulled) {
                     _syncing = false;
-                    if (SYNC.autoUpload) { pushState(); setSync('已同步', 'on'); }
-                    else { _markPending(); }
+                    _markPending();   // v1.30.362：有未上传改动 → 只提示手动上传，绝不自动推、也不拉云端覆盖
                     return;
                 }
                 // v1.30.335：首拉时若本机还有未上传的改动 → 同样不拉（保护本机），等用户手动上传
@@ -10412,7 +10409,7 @@
                     } else if (meta === null) {
                         // 云端无该行：等同「暂无数据」分支处理
                         _pulled = true; _lastSyncAt = new Date(); setSync('已同步', 'on');
-                        if (localHasRealData()) { if (SYNC.autoUpload) pushState(); else { _dirty = true; _markPending(); } }
+                        if (localHasRealData()) { _dirty = true; _markPending(); }   // v1.30.362：改为标脏提示手动上传
                         snapshotAutoBackup();
                         _syncing = false; return;
                     } else if (meta === _lastCloudUpdatedAt) {
@@ -10445,11 +10442,9 @@
                         setSync('云端异常·已保留本机', 'err');
                         if (!_safetyValveTripped) {
                             _safetyValveTripped = true;
-                            showToast(SYNC.autoUpload
-                                ? '⚠️ 检测到云端数据量异常偏少（疑似被误清），已保留本机数据并回推云端修复。如需改用云端，请先清空本机数据再同步。'
-                                : '⚠️ 检测到云端数据量异常偏少（疑似被误清），已保留本机数据。请点「⬆️ 上传云端」把本机数据备份回云端。');
+                            showToast('⚠️ 检测到云端数据量异常偏少（疑似被误清），已保留本机数据。请点「⬆️ 上传云端」把本机数据备份回云端。');
                         }
-                        if (SYNC.autoUpload) pushState(); else { _dirty = true; _markPending(); }
+                        _dirty = true; _markPending();   // v1.30.362：标脏提示手动上传，不自动回推
                         _syncing = false;
                         return;
                     }
@@ -10484,18 +10479,17 @@
                     _lastCloudUpdatedAt = cloudUpdatedAt;   // v1.30.330：记录云端时间戳，供下次轻量探测比对
                     snapshotAutoBackup();   // v1.30.314：首拉/合并成功后留当月快照（含云端数据）
                     setSync('已同步', 'on');
-                    // v1.30.331：把瘦身后的载荷回推云端（自愈）
-                    // v1.30.335：手动备份模式下不自动推，改标「有未上传改动」，等用户点「上传云端」
+                    // v1.30.362：合并/瘦身后的改动只标脏、提示手动上传，绝不自动回推云端
                     if (pushMerged || reshaped) {
                         _dirty = true;
-                        if (SYNC.autoUpload) pushState(); else _markPending();
+                        _markPending();
                     }
                 } else {
                     // 云端暂无该标识数据：标记已拉取；本机有真实数据则推上去做种
                     _pulled = true; _lastSyncAt = new Date();
                     _lastCloudUpdatedAt = null;   // v1.30.330：无云端数据，下次仍走整包拉取
                     setSync('已同步', 'on');
-                    if (localHasRealData()) { if (SYNC.autoUpload) pushState(); else { _dirty = true; _markPending(); } }
+                    if (localHasRealData()) { _dirty = true; _markPending(); }   // v1.30.362：标脏提示手动上传
                     snapshotAutoBackup();   // v1.30.314：本机有真实数据且云端空白，也先留一份快照
                 }
             } catch (e) {
@@ -10509,10 +10503,9 @@
         async function syncNow(manual) {
             if (!SYNC.enabled) { if (manual) showSyncMsg('联网同步未开启', 'warn'); return; }
             if (_syncing) return;
-            if (!manual && isEditingEl()) return;   // 自动拉取不打断输入
-            await pullState();
+            await pullState();   // v1.30.362：仅由手动按钮触发，无自动拉取
             if (manual) {
-                if (_cloudRestricted) showSyncMsg('云端服务被暂停（免费额度用尽或账单限制）。本机数据完好、可照常使用；云端恢复后会自动重新同步。', 'warn');
+                if (_cloudRestricted) showSyncMsg('云端服务被暂停（免费额度用尽或账单限制）。本机数据完好、可照常使用；云端恢复后请手动点「⬇️ 拉取云端」。', 'warn');
                 else if (_lastErr) showSyncMsg('同步失败：' + _lastErr, 'warn');
                 else showSyncMsg('已与云端同步最新数据', 'ok');
             }
@@ -10595,10 +10588,10 @@
                         try { showToast('⚠️ 本机存储空间已满，最新修改未能保存。请到「数据 → 数据备份」清理历史快照。'); } catch (x) {}
                     }
                 }
-                // v1.30.335：手动备份模式 → 只标脏 + 提示「有未上传改动」，不再自动推送
+                // v1.30.362：只标脏 + 提示「有未上传改动」，绝不自动推送
                 if (ok && WATCH[k] && !_suppressDirty && SYNC && SYNC.enabled) {
                     _dirty = true;
-                    if (SYNC.autoUpload) pushState(); else _markPending();
+                    _markPending();
                 }
             };
         }
@@ -10619,8 +10612,6 @@
             const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
             const en = document.getElementById('sync-enabled');
             if (en) en.checked = !!SYNC.enabled;
-            const au = document.getElementById('sync-autoupload');   // v1.30.335
-            if (au) au.checked = !!SYNC.autoUpload;
             set('sync-url', SYNC.url || '');
             set('sync-anon', SYNC.anon || '');
             set('sync-table', SYNC.table || 'workbench_state');
@@ -10628,8 +10619,8 @@
             const m = document.getElementById('sync-msg');
             if (m) m.style.display = 'none';
             const cls = SYNC.enabled ? ((_cloudRestricted || _lastErr) ? 'err' : (_lastSyncAt ? 'on' : 'busy')) : '';
-            setSync(SYNC.enabled ? (_cloudRestricted ? _restrictedNote() : (_dirty && !SYNC.autoUpload ? '有未上传改动' : (_lastErr ? '同步失败' : (_lastSyncAt ? '已同步' : '已开启')))) : '本地', cls);
-            if (_cloudRestricted) showSyncMsg('云端当前被暂停（免费额度用尽或账单限制）。本机数据完好、可照常使用；云端恢复后会自动重新同步。', 'warn');
+            setSync(SYNC.enabled ? (_cloudRestricted ? _restrictedNote() : (_dirty ? '有未上传改动' : (_lastErr ? '同步失败' : (_lastSyncAt ? '已同步' : '已开启')))) : '本地', cls);
+            if (_cloudRestricted) showSyncMsg('云端当前被暂停（免费额度用尽或账单限制）。本机数据完好、可照常使用；云端恢复后请手动点「⬇️ 拉取云端」。', 'warn');
             modal.style.display = 'flex';
         }
         function closeSyncPanel() {
@@ -10640,9 +10631,6 @@
             const en = document.getElementById('sync-enabled');
             const val = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
             SYNC.enabled = !!(en && en.checked);
-            // v1.30.335：自动上传开关（默认关 = 手动点「上传云端」）
-            const au = document.getElementById('sync-autoupload');
-            SYNC.autoUpload = !!(au && au.checked);
             SYNC.url = val('sync-url');
             SYNC.anon = val('sync-anon');
             SYNC.table = val('sync-table') || 'workbench_state';
@@ -10651,9 +10639,8 @@
         function saveSyncPanelCfg() {
             readSyncPanelCfg();
             if (SYNC.enabled) {
-                _pulled = false;                 // 配置变更后重新走一次首拉
-                showSyncMsg('设置已保存，正在连接云端…', 'ok');
-                syncNow(true);
+                _pulled = false;                 // 配置变更后，下次手动拉取走完整首拉合并
+                showSyncMsg('设置已保存。请点「⬇️ 拉取云端」获取数据，或点「⬆️ 上传云端」备份本机。', 'ok');
             } else {
                 setSync('本地');
                 showSyncMsg('已保存：联网同步已关闭，数据仅存本机。', 'ok');
@@ -10674,9 +10661,7 @@
             readSyncPanelCfg();
             if (!SYNC.enabled) { showSyncMsg('请先勾选「启用联网同步」', 'warn'); return; }
             if (_dirty && _pulled) {
-                // v1.30.335：手动备份模式不自动推，提示先手动上传
-                if (SYNC.autoUpload) { showSyncMsg('本机有未上云改动，已先推送本机（未用云端覆盖）', 'warn'); pushState(); }
-                else showSyncMsg('本机有未上传改动。请先点「⬆️ 上传云端」备份，再拉取云端（避免用云端旧数据覆盖本机）。', 'warn');
+                showSyncMsg('本机有未上传改动。请先点「⬆️ 上传云端」备份，再拉取云端（避免用云端旧数据覆盖本机）。', 'warn');
                 return;
             }
             await pullState();
@@ -10684,32 +10669,12 @@
             else showSyncMsg('已拉取云端最新数据', 'ok');
         }
 
+        // v1.30.362：全手动同步——不注册任何自动拉取（启动/focus/pageshow/可见/轮询）与自动推送（离开/切后台）监听。
+        //   数据只在用户点「⬆️ 上传云端」「⬇️ 拉取云端」时才与云端往来；本机写入只标脏、留待手动上传。
         function initSync() {
             installSyncWriteHook();
             if (!SYNC.enabled) { setSync('本地'); return; }
-            setSync('已开启', 'busy');
-            pullState();
-            window.addEventListener('focus', () => syncNow(false));
-            // v1.30.328：手机 PWA/浏览器从后台切回时 focus 不可靠、iOS 还会挂起定时器；
-            // 补 pageshow（移动端恢复/前进后退缓存最稳的触发）+ visibilitychange，确保回到 app 立即拉取。
-            window.addEventListener('pageshow', () => syncNow(false));
-            document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncNow(false); });
-            // v1.30.359：轮询由 10s 放宽到 60s —— Supabase 免费出站额度被自动同步刷爆（21.4GB/5GB）后紧急止血。
-            // 根因：多设备长开 app，探测失败/弱网时会降级成「整包拉取」，累积出站流量打满 5GB 额度 → 项目被暂停（402）。
-            // 放宽到 60s 后空闲轮询流量约为原来的 1/6；稳定性与可用性优先，跨设备同步慢一点可接受。
-            // 云端被限制（402）期间退避到 10 分钟探一次 —— 省电、不再空打请求；
-            //   一旦探测到恢复（不再 402）自动回到 60s 的正常节奏。
-            setInterval(() => {
-                if (document.visibilityState !== 'visible') return;
-                if (_cloudRestricted) {
-                    _restrictedProbe = (_restrictedProbe + 1) % 10;   // 10 × 60s = 10 分钟
-                    if (_restrictedProbe !== 0) return;
-                }
-                syncNow(false);
-            }, 60000);
-            // v1.30.335：手动备份模式下，离开页面/切后台不再偷偷上传（只留在本机）
-            window.addEventListener('beforeunload', () => { if (_dirty && SYNC.autoUpload) pushState(); });
-            document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && _dirty && SYNC.autoUpload) pushState(); });
+            setSync('已开启·手动', 'busy');
         }
 
         // ============ 登录门禁（v1.30.289：锁死唯一账号）============
@@ -10879,13 +10844,14 @@
                 // v1.30.288：首次用私有标识登录时，先把老「公开 board」的数据搬进来。
                 // 网络异常也照常进应用（catch 兜底），绝不因为搬迁失败而进不去。
                 try { migrateLegacyBoardOnce().then(bootApp, bootApp); } catch (e) { bootApp(); }
-            } else if (typeof syncNow === 'function') { try { syncNow(false); } catch (e) {} }
+            }
+            // v1.30.362：再次登录不再自动拉取；数据只在用户手动点「拉取云端」时同步
         }
 
         function doLogout() {
-            // v1.30.335：退登会清空本机数据。手动备份模式下若还有未上传的改动，必须先上传，否则直接丢。
-            var _pending = (_dirty && !SYNC.autoUpload);
-            var _msg = '退出登录会清除本机数据并锁定应用。\n云端数据不受影响，下次登录会自动恢复。';
+            // v1.30.362：退登会清空本机数据。全手动模式下若有未上传改动，必须先手动上传，否则直接丢。
+            var _pending = _dirty;
+            var _msg = '退出登录会清除本机数据并锁定应用。\n云端数据不受影响，下次登录后点「拉取云端」即可恢复。';
             if (_pending) _msg += '\n\n⚠️ 本机还有未上传到云端的改动，退出会丢失。\n建议先上传云端再退出。';
             if (!confirm(_msg + '\n\n确定退出？')) return;
             const finish = function () {
@@ -10895,26 +10861,9 @@
                 } catch (e) {}
                 location.reload();
             };
-            try {
-                // v1.30.335：手动备份模式 → 先上传成功才退登（上传失败则不退出，避免丢数据）
-                if (_pending && typeof pushState === 'function') {
-                    var _done = false;
-                    var _to = setTimeout(function () {
-                        if (_done) return; _done = true;
-                        try { showToast('❌ 上传超时，未退出登录。本机数据仍完整，可稍后重试或手动点「上传云端」。'); } catch (e) {}
-                    }, 8000);
-                    pushState(true, function (ok, err) {
-                        if (_done) return; _done = true; clearTimeout(_to);
-                        if (ok) finish();
-                        else { try { showToast('❌ 上传失败，未退出登录：' + err + '（本机数据仍完整）'); } catch (e) {} }
-                    });
-                    return;
-                }
-                // 退登前尽力把未上云的改动推一次，避免丢数据（最多等 2.5 秒）
-                if (_dirty && typeof pushState === 'function') {
-                    Promise.race([pushState(), new Promise(r => setTimeout(r, 2500))]).then(finish, finish);
-                } else { finish(); }
-            } catch (e) { finish(); }
+            // v1.30.362：全手动——有未上传改动时直接阻止退登，请用户先手动上传，绝不自动推。
+            if (_pending) { try { showToast('请先点「⬆️ 上传云端」备份本机数据，再退出登录。'); } catch (e) {} return; }
+            finish();
         }
 
         // ============ 启动 ============
@@ -10961,7 +10910,7 @@
             renderCockpit();
             syncMonthSelectors();
             checkVersion();
-            // 联网同步：安装写钩子并按配置拉起（云端为权威 + 本地编辑即推送）
+            // 联网同步：v1.30.362 仅安装写钩子（标脏），不自动拉取
             // v1.30.342：iOS 上大 payload / localStorage 异常不得拖垮整个启动流程
             try { initSync(); } catch (e) { try { console.warn('[启动] 联网同步初始化失败', e); } catch (e2) {} }
             // v1.30.314：每月自动备份快照（离线/本地模式启动兜底；联网设备由首拉成功后强制刷新当月快照）
@@ -10971,8 +10920,8 @@
             // 杜绝界面卡在「null」空壳让用户以为数据全丢。
             try {
                 if (getValidMonthNames().length === 0) {
-                    if (getSyncBoard()) { showToast('⚠️ 本机数据异常，正在从云端恢复…'); syncNow(false); }
-                    else showToast('⚠️ 本机月份数据异常，请登录后从云端恢复');
+                    if (getSyncBoard()) showToast('⚠️ 本机数据异常。请到「⚙️ 数据 → 联网设置」点「⬇️ 拉取云端」恢复。');
+                    else showToast('⚠️ 本机月份数据异常，请登录后到「联网设置」点「⬇️ 拉取云端」恢复');
                 }
             } catch (e) {}
         }
