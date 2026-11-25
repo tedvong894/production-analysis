@@ -2303,9 +2303,9 @@
                 <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:4px;">
                     <button class="btn-sm" style="font-size:13px; padding:8px 14px;" onclick="saveSyncPanelCfg()">保存设置</button>
                     <button class="btn-sm" style="background:#2d8a5a;color:#fff;font-size:13px;padding:8px 14px;" onclick="syncPanelPush()" title="把本机数据上传到云端（以本机为准，请确认本机是最新数据）">⬆️ 上传云端</button>
-                    <button class="btn-sm" style="font-size:13px; padding:8px 14px;" onclick="syncPanelPull()" title="以云端为准，拉取覆盖本机（本机有未上传改动时会先阻止，需先手动上传）">⬇️ 拉取云端</button>
+                    <button class="btn-sm" style="font-size:13px; padding:8px 14px;" onclick="syncPanelPull()" title="以云端为准，拉取覆盖本机（本机未上传的改动将被云端覆盖）">⬇️ 拉取云端</button>
                 </div>
-                <div class="hint" style="margin-top:8px;">规则：<b>上传、下载全部手动</b>——本机改完点「⬆️ 上传云端」才上云（改动会一直标着「有未上传改动」，跨刷新不丢）；要拿云端数据请点「⬇️ 拉取云端」；打开页面、切回前台、刷新都不会自动同步。本机有未上传改动时绝不拉取云端，绝不用旧数据覆盖本机。</div>
+                <div class="hint" style="margin-top:8px;">规则：<b>上传、下载全部手动</b>——本机改完点「⬆️ 上传云端」才上云（改动会一直标着「有未上传改动」，跨刷新不丢）；要拿云端数据请点「⬇️ 拉取云端」；打开页面、切回前台、刷新都不会自动同步。<b>拉取以云端为准</b>：点「⬇️ 拉取云端」会直接用云端覆盖本机（包括本机未上传的改动），电脑传完手机直接下拉即可。</div>
             </div>
         </div>
     </div>
@@ -2462,7 +2462,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.362</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.363</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -8846,7 +8846,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.362';
+        const APP_VERSION = 'v1.30.363';
 
         function forceRefresh() {
             if ('caches' in window) {
@@ -9836,7 +9836,7 @@
 
         // ============ 联网同步（Supabase）============
         // v1.30.362：全手动同步——本地编辑只标脏、不自动推送；数据只在用户点「上传/拉取云端」时往来。
-        // 手动拉取采纳云端；_dirty 脏标记守卫；首拉离线保护；数据保护安全阀保留。
+        // v1.30.363：拉取不再受 _dirty 拦截，点「拉取云端」即以云端为准覆盖本机；首拉离线保护、防丢失安全阀保留。
         // 复用军机处同一 Supabase 项目与 workbench_state 表（字段 id/data/updated_at），用本 app 专属 board 行隔离。
         const SYNC_CFG_KEY = 'production_analysis_sync_cfg';
         // ⚠️ v1.30.288：这是老版本写死在网页里的「公开固定 board」。任何人拿网页里公开的 anon key
@@ -10380,17 +10380,10 @@
             _syncing = true;
             setSync('同步中…', 'busy');
             try {
-                // 本机有未上云改动（且已拉过一次）：只推本地，绝不被云端覆盖。
-                // 放在探测之前，连「轻量探测」这一次网络请求都省掉。
-                // v1.30.335：手动备份模式下改成「连推也不做」——只提示「有未上传改动」，
-                //   等用户点「上传云端」；绝不拿云端旧数据覆盖本机。
-                if (_dirty && _pulled) {
-                    _syncing = false;
-                    _markPending();   // v1.30.362：有未上传改动 → 只提示手动上传，绝不自动推、也不拉云端覆盖
-                    return;
-                }
-                // v1.30.335：首拉时若本机还有未上传的改动 → 同样不拉（保护本机），等用户手动上传
-                if (_dirty && !_pulled) { _syncing = false; _markPending(); return; }
+                // v1.30.363：去掉「本机有未上传数据时不拉取云端」规则——
+                //   用户点「⬇️ 拉取云端」即一律以云端为准，直接覆盖本机（含本机未上传的改动）。
+                //   场景：电脑端上传 → 手机端直接下拉，若手机端被要求先上传会陷入恶性循环。
+                //   拉取成功后 _dirty 会清零（采纳了云端），不再残留「有未上传改动」。
 
                 // v1.30.330：轻量探测——已拉取过且记录过云端 updated_at 时，先只拉 updated_at（几十字节）。
                 // 与本地记录一致就跳过「整包下载 + AES 解密」这 43KB 重活，移动端/弱网不再每 10s 搬密文。
@@ -10660,13 +10653,13 @@
         async function syncPanelPull() {
             readSyncPanelCfg();
             if (!SYNC.enabled) { showSyncMsg('请先勾选「启用联网同步」', 'warn'); return; }
-            if (_dirty && _pulled) {
-                showSyncMsg('本机有未上传改动。请先点「⬆️ 上传云端」备份，再拉取云端（避免用云端旧数据覆盖本机）。', 'warn');
-                return;
-            }
+            // v1.30.363：不再因本机有未上传改动而拦截拉取——点「拉取云端」即以云端为准覆盖本机。
+            const _hadLocalEdits = _dirty;
             await pullState();
             if (_lastErr) showSyncMsg('拉取失败：' + _lastErr, 'warn');
-            else showSyncMsg('已拉取云端最新数据', 'ok');
+            else showSyncMsg(_hadLocalEdits
+                ? '✅ 已拉取云端最新数据（本机未上传的改动已被云端覆盖）。'
+                : '✅ 已拉取云端最新数据', 'ok');
         }
 
         // v1.30.362：全手动同步——不注册任何自动拉取（启动/focus/pageshow/可见/轮询）与自动推送（离开/切后台）监听。
