@@ -56,11 +56,10 @@
         }
         .auth-user .auth-logout { color: #7a94b8; cursor: pointer; }
         .auth-user .auth-logout:active { opacity: .6; }
-        /* v1.30.364：顶部常驻「上传」入口——低对比、与「退出」同款；有未上传改动时变琥珀色+小圆点 */
-        .auth-user .auth-upload { color: #7a94b8; cursor: pointer; white-space: nowrap; }
-        .auth-user .auth-upload:active { opacity: .6; }
-        .auth-user .auth-upload.has-pending { color: #c4753b; font-weight: 600; }
-        .auth-user .auth-upload.has-pending::after { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #e0a030; margin-left: 4px; vertical-align: middle; }
+        /* v1.30.365：驾驶舱顶栏常驻「上传」入口——与「⚙️ 数据」同款低对比；有未上传改动时变琥珀色+小圆点 */
+        .header-upload-btn { color: #333; }
+        .header-upload-btn.has-pending { color: #c4753b !important; font-weight: 600; border-color: #e6c9a8 !important; }
+        .header-upload-btn.has-pending::after { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #e0a030; margin-left: 4px; vertical-align: middle; }
         #auth-gate {
             display: none;
             position: fixed;
@@ -1370,7 +1369,6 @@
         <p id="page-subtitle" data-page-node-id="edlWYBtpP6nDaUfJ0mMShR">元筑ALC生产经营数据面板</p>
         <div class="auth-user" id="auth-user">
             <span class="auth-email" id="auth-user-email"></span>
-            <span class="auth-upload" id="auth-upload-btn" onclick="uploadToCloud()" title="随时上传本机数据到云端（手动）">⬆️ 上传</span>
             <span class="auth-logout" onclick="doLogout()">退出</span>
         </div>
     </div>
@@ -2118,6 +2116,8 @@
                 <div class="cockpit-meta" id="cockpit-meta" data-page-node-id="oETc7BUaHZNHxI0GZmyLKP">—</div>
             </div>
             <div class="cockpit-actions" style="display:flex; gap:8px;" data-page-node-id="QWQUk0Ju7gIUBu2IQ5qxFA">
+                <!-- v1.30.365：常驻「上传」入口，放在「⚙️ 数据」左侧，随时手动上传本机数据 -->
+                <button class="btn btn-save header-upload-btn" id="auth-upload-btn" style="font-size:12px; padding:4px 12px; white-space:nowrap;" onclick="uploadToCloud()" title="随时上传本机数据到云端（手动）">⬆️ 上传</button>
                 <!-- v1.30.251：备份 / 联网 / 刷新 三合一入口（iPhone 窄屏不再把标题挤没） -->
                 <div class="data-menu-wrap">
                     <button class="btn btn-save" id="data-menu-btn" style="font-size:12px; padding:4px 12px; white-space:nowrap;" onclick="toggleDataMenu()" title="备份 / 联网 / 刷新" data-page-node-id="SfjFZkJCdseVQlsdGnLiWz">⚙️ 数据</button>
@@ -2468,7 +2468,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.364</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.365</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -8852,7 +8852,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.364';
+        const APP_VERSION = 'v1.30.365';
 
         function forceRefresh() {
             if ('caches' in window) {
@@ -9899,10 +9899,10 @@
             if (ps) ps.textContent = text;
             const pt = document.getElementById('sync-panel-time');
             if (pt) pt.textContent = _lastSyncAt ? ('最后同步 ' + _fmtClock(_lastSyncAt)) : '—';
-            updateHeaderUpload();   // v1.30.364：同步状态变化时刷新顶部常驻上传按钮的待上传提示
+            updateHeaderUpload();   // v1.30.365：同步状态变化时刷新驾驶舱顶栏上传按钮的待上传提示
         }
 
-        // v1.30.364：顶部常驻上传按钮的「有未上传改动」状态提示
+        // v1.30.365：驾驶舱顶栏上传按钮的「有未上传改动」状态提示
         function updateHeaderUpload() {
             try {
                 const el = document.getElementById('auth-upload-btn');
