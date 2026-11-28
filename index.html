@@ -56,6 +56,11 @@
         }
         .auth-user .auth-logout { color: #7a94b8; cursor: pointer; }
         .auth-user .auth-logout:active { opacity: .6; }
+        /* v1.30.364：顶部常驻「上传」入口——低对比、与「退出」同款；有未上传改动时变琥珀色+小圆点 */
+        .auth-user .auth-upload { color: #7a94b8; cursor: pointer; white-space: nowrap; }
+        .auth-user .auth-upload:active { opacity: .6; }
+        .auth-user .auth-upload.has-pending { color: #c4753b; font-weight: 600; }
+        .auth-user .auth-upload.has-pending::after { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #e0a030; margin-left: 4px; vertical-align: middle; }
         #auth-gate {
             display: none;
             position: fixed;
@@ -1365,6 +1370,7 @@
         <p id="page-subtitle" data-page-node-id="edlWYBtpP6nDaUfJ0mMShR">元筑ALC生产经营数据面板</p>
         <div class="auth-user" id="auth-user">
             <span class="auth-email" id="auth-user-email"></span>
+            <span class="auth-upload" id="auth-upload-btn" onclick="uploadToCloud()" title="随时上传本机数据到云端（手动）">⬆️ 上传</span>
             <span class="auth-logout" onclick="doLogout()">退出</span>
         </div>
     </div>
@@ -2462,7 +2468,7 @@
 
     <!-- 版本信息 -->
     <div class="version-bar" data-page-node-id="1UBBtysdmLvbx2X97eNJY8">
-        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.363</div>
+        <div class="version-tag" data-page-node-id="XoAfvGjxF1thW3lDxZFnw1">版本 v1.30.364</div>
         <div class="sync-chip" id="sync-state" onclick="openSyncPanel()" title="点击打开联网设置">☁️ 本地</div>
     </div>
 
@@ -8846,7 +8852,7 @@
         }
 
         // ============ 强制刷新 ============
-        const APP_VERSION = 'v1.30.363';
+        const APP_VERSION = 'v1.30.364';
 
         function forceRefresh() {
             if ('caches' in window) {
@@ -9577,14 +9583,16 @@
 
         // v1.30.335：从「数据备份」面板直接手动上传云端（不必先进「联网设置」）
         function uploadToCloud() {
-            if (!SYNC.enabled) { showBackupMsg('warn', '⚠️ 联网同步未开启，请到「⚙️ 数据 → 联网设置」开启后再上传。'); return; }
-            if (typeof getSyncBoard === 'function' && !getSyncBoard()) { showBackupMsg('warn', '⚠️ 未登录，无法上传云端。'); return; }
+            if (!SYNC.enabled) { const m='⚠️ 联网同步未开启，请到「⚙️ 数据 → 联网设置」开启后再上传。'; showBackupMsg('warn', m); try{showToast(m);}catch(e){} return; }
+            if (typeof getSyncBoard === 'function' && !getSyncBoard()) { const m='⚠️ 未登录，无法上传云端。'; showBackupMsg('warn', m); try{showToast(m);}catch(e){} return; }
             _pulled = true;                      // 用户明确要求以本机为准
             showBackupMsg('warn', '正在上传云端…');
+            try { showToast('正在上传云端…'); } catch (e) {}
             pushState(true, function (ok, err) {
-                if (ok) showBackupMsg('ok', '✅ 已上传云端（本机数据已备份到云端）。');
-                else showBackupMsg('warn', '❌ 上传失败：' + err);
+                if (ok) { showBackupMsg('ok', '✅ 已上传云端（本机数据已备份到云端）。'); try{showToast('✅ 已上传云端');}catch(e){} }
+                else { showBackupMsg('warn', '❌ 上传失败：' + err); try{showToast('❌ 上传失败：' + err);}catch(e){} }
                 renderBackupCloudState();
+                updateHeaderUpload();
             });
         }
 
@@ -9891,6 +9899,18 @@
             if (ps) ps.textContent = text;
             const pt = document.getElementById('sync-panel-time');
             if (pt) pt.textContent = _lastSyncAt ? ('最后同步 ' + _fmtClock(_lastSyncAt)) : '—';
+            updateHeaderUpload();   // v1.30.364：同步状态变化时刷新顶部常驻上传按钮的待上传提示
+        }
+
+        // v1.30.364：顶部常驻上传按钮的「有未上传改动」状态提示
+        function updateHeaderUpload() {
+            try {
+                const el = document.getElementById('auth-upload-btn');
+                if (!el) return;
+                const pending = !!(SYNC && SYNC.enabled && _dirty);
+                el.classList.toggle('has-pending', pending);
+                el.title = pending ? '有未上传改动，点此上传到云端' : '随时上传本机数据到云端（手动）';
+            } catch (e) {}
         }
 
         function collectLocalPayload() {
